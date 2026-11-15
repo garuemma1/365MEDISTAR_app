@@ -2,8 +2,8 @@
   "name": "365메디스타약국 HR/OPS 플랫폼",
   "short_name": "365메디스타",
   "description": "365메디스타약국 전문 HR/OPS 플랫폼 및 안드로이드 네이티브 앱",
-  "start_url": "index.html",
-  "scope": "./",
+  "start_url": "https://garuemma1.github.io/365MEDISTAR_app/index.html",
+  "scope": "https://garuemma1.github.io/365MEDISTAR_app/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "background_color": "#ffffff",
@@ -13,25 +13,25 @@
   "package_name": "com.medistar365.pharmacy.app",
   "icons": [
     {
-      "src": "logo.jpg",
+      "src": "logo.jpg?v=20261115_004",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "logo.jpg",
+      "src": "logo.jpg?v=20261115_004",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "logo.jpg",
+      "src": "logo.jpg?v=20261115_004",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "maskable"
     },
     {
-      "src": "logo.jpg",
+      "src": "logo.jpg?v=20261115_004",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "maskable"
