@@ -13,25 +13,25 @@
   "package_name": "com.medistar365.pharmacy.app",
   "icons": [
     {
-      "src": "logo.jpg?v=20261115_004",
+      "src": "logo.jpg?v=20261115_005",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "logo.jpg?v=20261115_004",
+      "src": "logo.jpg?v=20261115_005",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "logo.jpg?v=20261115_004",
+      "src": "logo.jpg?v=20261115_005",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "maskable"
     },
     {
-      "src": "logo.jpg?v=20261115_004",
+      "src": "logo.jpg?v=20261115_005",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "maskable"
