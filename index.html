@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>365메디스타약국 HR/OPS 플랫폼 v7.0</title>
+  <meta name="description" content="대한민국 365 연중무휴 365메디스타약국 전문 HR/OPS 플랫폼 - 월간 근로시간 분리집계, 근로기준법 제60조 연차대장, 취업규칙, 일반약/전문약 위치관리 및 직원할인구매대장">
+
+  <!-- 파비콘 & 홈화면 아이콘 (iOS/Android PWA 지원 - 365메디스타약국 로고 고정) -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/jpeg" href="logo.jpg">
+  <link rel="shortcut icon" type="image/jpeg" href="logo.jpg">
+  <link rel="apple-touch-icon" href="logo.jpg">
+  <link rel="apple-touch-icon-precomposed" href="logo.jpg">
+  <link rel="apple-touch-icon" sizes="180x180" href="logo.jpg">
+  <link rel="apple-touch-icon" sizes="152x152" href="logo.jpg">
+  <link rel="apple-touch-icon" sizes="120x120" href="logo.jpg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="365메디스타약국">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="365메디스타약국">
+  <meta name="theme-color" content="#059669">
+  
+  <!-- 카카오톡 / SNS 공유 미리보기 (OpenGraph) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="365메디스타약국">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:title" content="🏥 365메디스타약국 HR/OPS 플랫폼">
+  <meta property="og:description" content="365메디스타약국 전용 직원 플랫폼 · 일반약/전문약 위치관리 · 월간 근무 스케줄 · 연차대장 · 약국장 결재 · 직원할인구매대장 · 취업규칙 SOP">
+  <meta property="og:image" content="logo.jpg">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:image:alt" content="365메디스타약국 로고">
+  <!-- Twitter Card (카카오채널 등 추가 호환) -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="🏥 365메디스타약국 HR/OPS 플랫폼">
+  <meta name="twitter:description" content="365메디스타약국 전용 직원 플랫폼 · 약품위치 · 근무표 · 연차대장 · 결재">
+  <meta name="twitter:image" content="logo.jpg">
+
+  <!-- 카카오톡 인앱 브라우저 호환성 및 크롬/사파리 자동 외부 연결 스크립트 -->
+  <script>
+    (function fixKakaoInAppBrowser() {
+      var ua = navigator.userAgent || navigator.vendor || window.opera;
+      var isKakao = ua.indexOf('KAKAOTALK') > -1 || ua.indexOf('KakaoTalk') > -1;
+      
+      if (isKakao) {
+        if (ua.indexOf('Android') > -1) {
+          var targetUrl = location.href.replace(/^https?:\/\//i, '');
+          location.href = 'intent://' + targetUrl + '#Intent;scheme=https;package=com.android.chrome;end';
+        } else {
+          document.addEventListener('DOMContentLoaded', function() {
+            var notice = document.getElementById('kakao-ios-notice');
+            if (notice) notice.style.display = 'block';
+          });
+        }
+      }
+    })();
+
+    // ⚡ 안전 버전 관리 (무한 루프 방지 & 정상 배포 연동)
+    (function safeVersionTracker() {
+      try {
+        var CURRENT_CLIENT_VERSION = "v7.001";
+        localStorage.setItem('mds_client_version', CURRENT_CLIENT_VERSION);
+      } catch(e) {}
+    })();
+  </script>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css?v=20261115_001">
+  <!-- Tailwind CSS, Lucide Icons & Chart.js for Smart Ledger -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- 카카오톡 인앱 브라우저 아이폰 안내 상단 팁 바 -->
+  <div id="kakao-ios-notice" style="display:none; background:#fef08a; color:#854d0e; padding:10px 16px; font-size:13px; font-weight:bold; border-bottom:1px solid #fde047; text-align:center; position:sticky; top:0; z-index:9999;">
+    💡 카카오톡 접속 안내: 화면이 멈추거나 안 뜨시면 우측 상단 <strong>[...]</strong> 누른 후 <strong>'Safari로 열기'</strong> 또는 <strong>'다른 브라우저로 열기'</strong>를 누르세요!
+  </div>
+
+  <div class="app-container">
+
+    <!-- 모바일 드로어 마스크 오버레이 -->
+    <div class="drawer-overlay" id="drawer-overlay" onclick="App.closeDrawer()"></div>
+
+    <!-- 1. 사이드 드로어 메뉴 (Side Drawer Navigation) -->
+    <aside class="drawer-sidebar" id="app-drawer">
+      <div class="drawer-brand">
+        <div class="brand-icon">
+          <img src="logo.jpg" alt="365메디스타약국 로고" class="brand-logo-img">
+        </div>
+        <div class="brand-title">
+          <h1>365메디스타약국 <span id="app-version-badge" class="badge badge-success" style="font-size: 11px; padding: 2px 6px; vertical-align: middle;">v7.001</span></h1>
+          <p>HR / OPS Platform</p>
+        </div>
+        <button class="drawer-close-mobile-btn" onclick="App.closeDrawer()">&times;</button>
+      </div>
+
+      <nav class="drawer-menu" id="drawer-menu-container">
+        <!-- JS renderSidebarNavigation()으로 로그인 상태 및 개인별 권한에 따라 안전하게 동적 렌더링 -->
+      </nav>
+
+      <div class="drawer-footer">
+        <div class="sheet-status-badge" onclick="App.openSheetModal()" style="cursor:pointer;" title="구글 스프레드시트 100% 양방향 실시간 동기화 설정">
+          <span class="status-dot"></span>
+          <span id="sheet-sync-status-text">📊 구글 시트 연동 설정</span>
+        </div>
+      </div>
+
+
+      <!-- 개발자 서명 및 저작권 위변조 무단도용 방지 락 시스템 -->
+      <div id="msd-copyright-guard" data-signature="MSD_2026_LEGAL_COPYRIGHT_LOCK_KEY" style="padding: 16px 20px; text-align: center; border-top: 1px solid #e2e8f0; background: #f8fafc; margin-top: auto;">
+        <div id="msd-brand-text" style="font-size: 11.5px; color: #64748b; font-weight: 700; letter-spacing: 0.5px;">
+          Crafted with 💊 by <strong id="msd-author" style="color: #0f172a; font-family: 'Outfit', sans-serif;">MSD</strong>
+        </div>
+        <div id="msd-rights-text" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
+          ⓒ 2026 MSD. All rights reserved.
+        </div>
+      </div>
+    </aside>
+
+    <!-- 2. 메인 화면 영역 (Main Viewport) -->
+    <div class="main-wrapper" id="main-wrapper">
+      
+      <!-- 상단 헤더 바 -->
+      <header class="top-header">
+        <div class="header-left">
+          <button class="toggle-drawer-btn" onclick="App.toggleDrawer()" title="사이드 드로어 메뉴 열기/닫기">
+            <i class="fas fa-bars"></i>
+          </button>
+          <img src="logo.jpg" alt="365메디스타약국 로고" class="header-logo-img">
+          <div class="header-module-info">
+            <strong id="active-module-title">📢 공지사항 & 업무 SOP</strong>
+          </div>
+        </div>
+
+        <div class="header-right d-flex align-items-center gap-2" style="white-space:nowrap; flex-wrap:nowrap;">
+          <div id="cloud-sync-badge">
+            <span class="badge cloud-badge-connected" style="font-size:11.5px; padding:6px 12px; border-radius:20px; font-weight:700; display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #10b981 0%, #059669 100%); color:#ffffff; box-shadow:0 2px 8px rgba(16,185,129,0.35); border:1px solid #059669;"><i class="fas fa-check-circle"></i> <span class="sync-badge-full-text">☁️ 실시간 클라우드 공유 연동 중</span><span class="sync-badge-short-text">☁️ 연동중</span></span>
+          </div>
+
+          <div id="user-profile-badge" class="d-flex align-items-center gap-2" style="white-space:nowrap; flex-wrap:nowrap;">
+            <!-- JS 동적 생성 (로그인 상태에 따라 로그인/계정선택 또는 프로필+로그아웃+비번변경 렌더링) -->
+          </div>
+
+        
+
+          <button class="header-btn" onclick="App.openGuide(true)" title="현재 탭 POP 사용설명서 보기" style="border-radius:10px; height:34px; padding:0 10px; display:inline-flex; justify-content:center; align-items:center; gap:5px; background:#fef08a; border:1.5px solid #eab308; box-shadow:0 2px 6px rgba(234,179,8,0.25); color:#0f172a; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap;">
+            <i class="fas fa-book-open" style="color:#b45309;"></i> <span>설명서</span>
+          </button>
+
+          <button class="header-btn" onclick="App.toggleTheme()" title="다크/라이트 테마 전환" style="border-radius:50%; width:34px; height:34px; padding:0; display:inline-flex; justify-content:center; align-items:center; background:#ffffff; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(0,0,0,0.05); color:#334155;">
+            <i class="fas fa-moon" id="theme-toggle-icon"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- 📰 데일리 3초 브리핑 카드 뉴스 상단 위젯 마운트 컨테이너 -->
+      <div id="daily-briefing-widget-mount" class="briefing-mount-container" style="padding:14px 20px 0 20px;"></div>
+
+      <!-- 메인 동적 모듈 렌더링 컨테이너 -->
+      <main class="module-content" id="module-content">
+        <!-- JS로 동적 렌더링됨 -->
+      </main>
+
+    </div>
+
+
+
+  </div>
+
+  <!-- 전역 공통 모달 1: 직원/약국장 정보 등록 및 수정 모달 -->
+  <div class="modal-overlay" id="global-emp-modal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="emp-modal-title">👤 직원/약국장 정보 수정</h3>
+        <button class="close-btn" onclick="App.closeEmpModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="emp-edit-form" onsubmit="App.saveEmpInfo(event)">
+          <input type="hidden" id="emp-edit-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>이름 (성함)</label>
+              <input type="text" id="emp-edit-name" required placeholder="예: 김메가, 박약사...">
+            </div>
+            <div class="form-group">
+              <label>직종 구분</label>
+              <select id="emp-edit-role">
+                <option value="약국장">약국장</option>
+                <option value="근무약사">근무약사</option>
+                <option value="일반직원">일반직원 (전산/조제보조)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>상세 직무/담당</label>
+              <input type="text" id="emp-edit-position" required placeholder="예: 대표약사, 조제팀장, 전산/청구">
+            </div>
+            <div class="form-group">
+              <label>입사일</label>
+              <input type="date" id="emp-edit-joindate" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>약정 시급 (원)</label>
+              <input type="number" id="emp-edit-rate" required placeholder="예: 35000">
+            </div>
+            <div class="form-group">
+              <label>연락처</label>
+              <input type="text" id="emp-edit-phone" placeholder="010-0000-0000">
+            </div>
+          </div>
+          <div class="form-group">
+            <label><i class="fas fa-sticky-note text-warning"></i> 약국장 참고사항 (특이사항 메모)</label>
+            <textarea id="emp-edit-memo" rows="3" placeholder="근무 특이사항, 야간/주말 가능 여부, 수습기간, 참고용 메모를 자유롭게 기재하세요."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-danger mr-auto" id="btn-delete-emp" onclick="App.deleteEmpInfo()" style="display:none;">
+              <i class="fas fa-user-minus"></i> 직원 명단 삭제
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="App.closeEmpModal()">취소</button>
+            <button type="submit" class="btn btn-primary">저장하기</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 공통 모달 2: 연차유급휴가 신청서 모달 -->
+  <div class="modal-overlay" id="global-leave-modal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🌴 연차유급휴가 신청서</h3>
+        <button class="close-btn" onclick="App.closeLeaveModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="leave-request-form" onsubmit="App.submitLeaveRequest(event)">
+          <div class="form-group">
+            <label>신청 직원 선택</label>
+            <select id="leave-form-emp" required>
+              <!-- JS 동적 생성 -->
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>휴가 종류</label>
+              <select id="leave-form-type" onchange="App.updateDaysCount()">
+                <option value="연차">전일 연차 (1.0일 차감)</option>
+                <option value="오전반차">오전 반차 (0.5일 차감)</option>
+                <option value="오후반차">오후 반차 (0.5일 차감)</option>
+                <option value="경조사">경조사 휴가</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>차감 연차 일수</label>
+              <input type="number" id="leave-form-days" value="1.0" step="0.5" readonly>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>시작일</label>
+              <input type="date" id="leave-form-start" required value="2026-08-14" onchange="App.updateDaysCount()">
+            </div>
+            <div class="form-group">
+              <label>종료일</label>
+              <input type="date" id="leave-form-end" required value="2026-08-14" onchange="App.updateDaysCount()">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>신청 사유</label>
+            <textarea id="leave-form-reason" rows="3" required placeholder="연차 신청 사유를 기재하세요"></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="App.closeLeaveModal()">취소</button>
+            <button type="submit" class="btn btn-primary">결재 신청서 제출</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 공통 모달 3: 날짜 터치 상세 모달 -->
+  <div class="modal-overlay" id="global-date-detail-modal" style="display:none;">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h3 id="date-detail-title">📅 날짜별 연차 상세</h3>
+        <button class="close-btn" onclick="App.closeDateDetailModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="date-detail-content">
+        <!-- 동적 렌더링 -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="App.closeDateDetailModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 공통 모달 4: 원본 사진 대형 라이트박스 (Chrome Data URI 차단 100% 우회) -->
+  <div class="modal-overlay" id="global-image-lightbox-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.92); backdrop-filter:blur(8px); z-index:999999; justify-content:center; align-items:center; padding:16px;">
+    <div class="modal-card shadow-2xl" style="background:#0f172a; border:1px solid #334155; border-radius:24px; max-width:90vw; width:480px; max-height:92vh; overflow:hidden; padding:20px; position:relative; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between;">
+      <button type="button" onclick="App.closeImageLightbox()" style="position:absolute; top:16px; right:16px; background:#334155; border:none; width:36px; height:36px; border-radius:50%; font-size:18px; color:#ffffff; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;"><i class="fas fa-times"></i></button>
+
+      <div style="width:100%; text-align:left; border-bottom:1px solid #334155; padding-bottom:10px; margin-bottom:14px; padding-right:50px;">
+        <h3 id="global-lightbox-title" style="font-size:15px; font-weight:800; color:#f8fafc; margin:0; display:flex; align-items:center; gap:6px;"><i class="fas fa-camera text-blue-400"></i> <span>사진 원본 크게보기</span></h3>
+      </div>
+
+      <div style="flex:1; width:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; min-height:220px; padding:6px 0;">
+        <img id="global-lightbox-img" src="" alt="사진 원본" style="max-width:100%; max-height:65vh; object-fit:contain; border-radius:14px; box-shadow:0 12px 30px rgba(0,0,0,0.6);" />
+      </div>
+
+      <div style="width:100%; display:flex; align-items:center; justify-content:space-between; border-top:1px solid #334155; pt:14px; margin-top:14px; gap:8px; flex-wrap:wrap;">
+        <button type="button" id="global-lightbox-download-btn" class="btn btn-primary" style="padding:9px 16px; border-radius:12px; font-size:12.5px; font-weight:800; background:#2563eb; color:#fff; border:none; cursor:pointer; display:flex; align-items:center; gap:6px;">
+          <i class="fas fa-download"></i> <span>💾 원본 사진 파일 저장</span>
+        </button>
+        <button type="button" onclick="App.closeImageLightbox()" class="btn btn-secondary" style="padding:9px 16px; border-radius:12px; font-size:12.5px; font-weight:700; background:#334155; color:#cbd5e1; border:none; cursor:pointer;">
+          닫기 (✕)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 공통 모달 4: 구글 시트 연동 설정 모달 -->
+  <div class="modal-overlay" id="sheet-modal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fas fa-table text-success"></i> 📊 구글 스프레드시트 연동 설정</h3>
+        <button class="close-btn" onclick="App.closeSheetModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="font-bold mb-2">연동 구글 스프레드시트 웹 주소 (URL)</label>
+          <input type="url" id="sheet-url-input" class="form-control" 
+                 value="https://docs.google.com/spreadsheets/d/16yVS9f9bQs9Z2S1k2McnxhHGb9QjQguPa93MxZvNtP0/edit?gid=0#gid=0"
+                 placeholder="https://docs.google.com/spreadsheets/d/...">
+        </div>
+        <div class="notice-box bg-light border p-3 border-radius-md mb-3 text-sm" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+          <p class="font-bold mb-1 text-primary"><i class="fas fa-info-circle"></i> 구글 시트 연동 방법 안내:</p>
+          <ol class="pl-4 text-xs text-muted" style="line-height: 1.6; margin-left: 14px;">
+            <li>약국장님의 구글 드라이브에서 스프레드시트를 만듭니다.</li>
+            <li>브라우저 상단의 시트 URL 주소를 복사하여 위 입력창에 붙여넣습니다.</li>
+            <li>아래 <strong>[ 🔄 시트 데이터 즉시 동기화 ]</strong> 버튼을 누르시면 1초만에 연동됩니다.</li>
+          </ol>
+        </div>
+        <div class="form-group mb-3 pt-3" style="border-top:1px solid #e2e8f0;">
+          <label class="font-bold mb-1 text-sm"><i class="fas fa-magic text-primary"></i> 100% 자동 연동용 구글 앱스 스크립트(GAS) 코드</label>
+          <button type="button" class="btn btn-outline-primary w-100 font-bold py-2" onclick="App.copyGasScriptCode()">
+            <i class="fas fa-code"></i> ⚡ 100% 자동 실시간 연동 스크립트 코드 복사
+          </button>
+        </div>
+        <div class="modal-footer flex justify-between items-center" style="display:flex; justify-content:space-between; align-items:center;">
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="App.resetDefaultSheetUrl()">
+            <i class="fas fa-undo"></i> 기본 샘플 시트 복원
+          </button>
+          <div class="flex gap-2">
+            <button type="button" class="btn btn-secondary" onclick="App.closeSheetModal()">닫기</button>
+            <button type="button" class="btn btn-success font-bold" onclick="App.saveSheetUrl()">
+              <i class="fas fa-sync-alt"></i> 🔄 시트 데이터 즉시 동기화
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 공통 모달 5: 직원 할인 구매 등록/수정 모달 (Global Discount Purchase Modal) -->
+  <div class="modal-overlay" id="discount-modal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="discount-modal-title">🛍️ 직원 할인 구매 신청</h3>
+        <button class="close-btn" onclick="DiscountPurchaseModule.closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="discount-form" onsubmit="DiscountPurchaseModule.savePurchase(event)">
+          <input type="hidden" id="disc-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>구매 직원 선택</label>
+              <select id="disc-emp" required>
+                <!-- JS 동적 생성 -->
+              </select>
+            </div>
+            <div class="form-group">
+              <label>구매 일시</label>
+              <input type="datetime-local" id="disc-datetime" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>약품 / 물품명</label>
+            <input type="text" id="disc-item" required placeholder="예: 유로펜정, 일동하이퍼비타민씨, 마데카솔분말">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>할인 단가 (원)</label>
+              <input type="number" id="disc-price" required placeholder="1980" oninput="DiscountPurchaseModule.calcTotal()">
+            </div>
+            <div class="form-group">
+              <label>수량</label>
+              <input type="number" id="disc-qty" value="1" min="1" required oninput="DiscountPurchaseModule.calcTotal()">
+            </div>
+            <div class="form-group">
+              <label>총 합계 금액 (원)</label>
+              <input type="number" id="disc-total" readonly>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="DiscountPurchaseModule.closeModal()">취소</button>
+            <button type="submit" class="btn btn-primary">등록하기</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. 직원 개별 로그인 전용 모달 -->
+  <div class="modal-overlay" id="login-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#fff; border-radius:18px; max-width:480px; width:92%; padding:28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); position:relative;">
+      <button type="button" class="close-btn" onclick="App.closeLoginModal()" style="position:absolute; top:16px; right:20px; font-size:24px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      <div class="text-center mb-4">
+        <img src="logo.jpg" style="width:64px; height:64px; border-radius:50%; margin-bottom:10px; border:3px solid var(--primary-color);">
+        <h3 style="font-size:20px; font-weight:bold; color:var(--text-main); margin-bottom:4px;">365메디스타약국 직원 로그인</h3>
+        <p class="text-muted" style="font-size:13px; margin:0;">개인 계정 접속 및 본인 급여/업무 전용 서비스</p>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" style="font-size:13px; font-weight:bold; color:var(--primary-color);">⚡ 1초 빠른 선택 로그인 (이름 누르기)</label>
+        <div class="d-flex flex-wrap gap-2" id="quick-login-buttons" style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button type="button" class="btn btn-sm btn-danger" onclick="App.quickSelectLogin('garuemma@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px; font-weight:bold;">🏆 문성도 (약국장)</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.quickSelectLogin('kmj6813@hanmail.net')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👨‍⚕️ 권명주 (약사)</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.quickSelectLogin('kan0@hanmail.net')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👩‍⚕️ 간영자 (약사)</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.quickSelectLogin('did3397@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👩‍⚕️ 양윤지 (약사)</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.quickSelectLogin('kdw951212@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👨‍⚕️ 김동완 (약사)</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.quickSelectLogin('yhj794@gmail.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👨‍⚕️ 유호종 (약사)</button>
+          <button type="button" class="btn btn-sm btn-outline-dark" onclick="App.quickSelectLogin('tptkd9@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👩‍💼 김배영 (직원)</button>
+          <button type="button" class="btn btn-sm btn-outline-dark" onclick="App.quickSelectLogin('4867942@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👩‍💼 이정은 (직원)</button>
+          <button type="button" class="btn btn-sm btn-outline-dark" onclick="App.quickSelectLogin('leesesd@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👩‍💼 이성은 (직원)</button>
+          <button type="button" class="btn btn-sm btn-outline-dark" onclick="App.quickSelectLogin('hsboy07@naver.com')" style="border-radius:20px; font-size:13px; padding:6px 12px;">👨‍💼 최종현 (직원)</button>
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <form onsubmit="App.handleLoginSubmit(event)">
+        <div class="form-group mb-3">
+          <label style="font-size:13px; font-weight:bold;">아이디 (ID)</label>
+          <input type="text" id="login-username" class="form-control" placeholder="예: director, kwon, lee" required>
+        </div>
+        <div class="form-group mb-4">
+          <label style="font-size:13px; font-weight:bold;">비밀번호 (Password)</label>
+          <input type="password" id="login-passcode" class="form-control" placeholder="비밀번호 입력" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 py-3 font-bold" style="border-radius:10px; font-size:16px;">
+          <i class="fas fa-sign-in-alt"></i> 로그인하기
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. 비밀번호 10자리 자율 변경 모달 -->
+  <div class="modal-overlay" id="change-password-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#fff; border-radius:18px; max-width:450px; width:92%; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3);">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 style="font-size:18px; font-weight:bold; margin:0; color:var(--primary-color);"><i class="fas fa-key text-warning"></i> 비밀번호 자율 변경</h3>
+        <button type="button" class="close-btn" onclick="App.closeChangePwModal()">&times;</button>
+      </div>
+
+      <div class="alert alert-info p-2 mb-3" style="font-size:12px; border-radius:8px;">
+        🛡️ <strong>보안 검증 규칙:</strong> 최소 10자리 이상 (숫자 4개 이상 + 영문 4개 이상 + 특수기호 2개 이상)
+      </div>
+
+      <form onsubmit="App.handleChangePwSubmit(event)">
+        <div class="form-group mb-2">
+          <label style="font-size:13px; font-weight:bold;">현재 비밀번호</label>
+          <input type="password" id="cpw-current" class="form-control" required placeholder="현재 비밀번호">
+        </div>
+        <div class="form-group mb-2">
+          <label style="font-size:13px; font-weight:bold;">새 비밀번호 (10자리 이상 복합)</label>
+          <input type="password" id="cpw-new" class="form-control" required placeholder="예: mega3679!!" oninput="App.checkPwRealtime()">
+        </div>
+        <div class="form-group mb-3">
+          <label style="font-size:13px; font-weight:bold;">새 비밀번호 확인</label>
+          <input type="password" id="cpw-confirm" class="form-control" required placeholder="새 비밀번호 다시 입력">
+        </div>
+        <div id="pw-realtime-msg" class="mb-3 p-2 text-center" style="font-size:12px; font-weight:bold; border-radius:6px; background:#f1f5f9; color:#64748b;">
+          비밀번호를 입력해 주세요.
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-secondary" onclick="App.closeChangePwModal()">취소</button>
+          <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> 비밀번호 변경완료</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. 약국장 전용 직원별 올인원 통합 관리 & 메뉴 탭 접근 권한 모달 -->
+  <div class="modal-overlay" id="perm-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:99999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#fff; border-radius:20px; max-width:560px; width:94%; padding:26px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:90vh; overflow-y:auto;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 style="font-size:18px; font-weight:bold; margin:0; color:#1e40af;"><i class="fas fa-sliders-h"></i> ⚙️ 직원 통합 관리 & 메뉴 탭 권한 맞춤 설정</h3>
+        <button type="button" class="close-btn" onclick="document.getElementById('perm-modal').style.display='none'" style="font-size:22px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      </div>
+
+      <form onsubmit="StaffDirectoryModule.saveStaffPermissions(event)">
+        <input type="hidden" id="perm-emp-id">
+        <div class="alert alert-primary p-3 mb-3" style="font-size:13px; border-radius:12px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af;">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              👤 <strong>대상 직원:</strong> <span id="perm-emp-name" style="font-size:15px; font-weight:800; color:#0f172a;">-</span>
+            </div>
+            <button type="button" class="btn btn-xs btn-outline-warning font-bold" onclick="StaffDirectoryModule.quickResetPasscodeInModal()" style="font-size:11.5px; padding:3px 8px; border-radius:8px;">
+              <i class="fas fa-key"></i> 🔑 비번 리셋
+            </button>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label style="font-size:13.5px; font-weight:bold; color:#334155; margin-bottom:8px; display:block;">
+            🔐 메뉴 탭 접근 권한 (체크 해제 시 직원의 사이드바에서 0.1초 즉시 숨겨짐)
+          </label>
+          <div class="perm-tabs-list p-3" style="max-height:280px; overflow-y:auto; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="notices-module" id="ptab-notices">
+              <label class="form-check-label font-bold" for="ptab-notices" style="font-size:13px;">📢 공지사항 & SOP</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="worklog-module" id="ptab-worklog">
+              <label class="form-check-label font-bold" for="ptab-worklog" style="font-size:13px;">📝 약국 업무일지 & 인수인계</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="supplies-module" id="ptab-supplies">
+              <label class="form-check-label font-bold" for="ptab-supplies" style="font-size:13px;">📦 약국 소모품 관리 & 신청</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="patient-orders-module" id="ptab-patient-orders">
+              <label class="form-check-label font-bold" for="ptab-patient-orders" style="font-size:13px;">📋 환자 예약 주문 & 선결제 관리</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="medicine-location-module" id="ptab-medicine-location">
+              <label class="form-check-label font-bold" for="ptab-medicine-location" style="font-size:13px;">💊 일반약 위치 관리</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="rx-medicine-location-module" id="ptab-rx-medicine-location">
+              <label class="form-check-label font-bold" for="ptab-rx-medicine-location" style="font-size:13px;">💉 전문약(조제실) 위치 관리</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="pill-counter-module" id="ptab-pill-counter">
+              <label class="form-check-label font-bold" for="ptab-pill-counter" style="font-size:13px;">🔢 스마트 알약 카운터 & 조제 검수기</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="pill-identifier-module" id="ptab-pill-identifier">
+              <label class="form-check-label font-bold" for="ptab-pill-identifier" style="font-size:13px;">🔎 의약품 낱알 식별기 (식약처 API & AI)</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="pharmacy-exchange-module" id="ptab-pharmacy-exchange">
+              <label class="form-check-label font-bold" for="ptab-pharmacy-exchange" style="font-size:13px;">🤝 인근약국 교품 & 불용재고 대장</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="expiry-returns-module" id="ptab-expiry-returns">
+              <label class="form-check-label font-bold" for="ptab-expiry-returns" style="font-size:13px;">⏳ 유효기간 & 제약사 반품 대장</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="schedule-module" id="ptab-schedule">
+              <label class="form-check-label font-bold" for="ptab-schedule" style="font-size:13px;">📅 월간 근무 스케줄 & 급여</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="annual-leave-module" id="ptab-annual-leave">
+              <label class="form-check-label font-bold" for="ptab-annual-leave" style="font-size:13px;">🌴 연차대장 & 달력</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="discount-purchase-module" id="ptab-discount-purchase">
+              <label class="form-check-label font-bold" for="ptab-discount-purchase" style="font-size:13px;">🛍️ 직원할인구매대장</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="emergency-contacts-module" id="ptab-emergency-contacts">
+              <label class="form-check-label font-bold" for="ptab-emergency-contacts" style="font-size:13px;">☎️ 지원 연락망</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input perm-tab-cb" type="checkbox" value="rules-module" id="ptab-rules">
+              <label class="form-check-label font-bold" for="ptab-rules" style="font-size:13px;">📜 취업규칙 & 복무규정</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-4">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('perm-modal').style.display='none'">취소</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> 설정 저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3-2. 세무사 PDF 급여명세서 업로드 모달 -->
+  <div class="modal-overlay" id="paystub-upload-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:999999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#fff; border-radius:20px; max-width:680px; width:94%; padding:28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); position:relative; max-height:90vh; overflow-y:auto;">
+      <button type="button" class="close-btn" onclick="document.getElementById('paystub-upload-modal').style.display='none'" style="position:absolute; top:20px; right:24px; font-size:24px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      <div id="paystub-upload-modal-content">
+        <!-- JS 동적 렌더링 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 직원 개별 확정 급여명세서 전용 팝업 모달 -->
+  <div class="modal-overlay" id="paystub-detail-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:999999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#fff; border-radius:20px; max-width:620px; width:94%; padding:28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); position:relative;">
+      <button type="button" class="close-btn" onclick="document.getElementById('paystub-detail-modal').style.display='none'" style="position:absolute; top:20px; right:24px; font-size:24px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      <div id="paystub-detail-modal-content">
+        <!-- JS 동적 렌더링 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 약국장 전용 세후 세무사통합명세서 등록 및 교부 팝업 모달 -->
+  <div class="modal-overlay" id="director-tax-paystub-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#ffffff; border-radius:20px; max-width:880px; width:95%; padding:30px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); position:relative; max-height:90vh; overflow-y:auto;">
+      <button type="button" class="close-btn" onclick="document.getElementById('director-tax-paystub-modal').style.display='none'" style="position:absolute; top:20px; right:24px; font-size:26px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      <div id="director-tax-paystub-modal-content">
+        <!-- JS 동적 렌더링 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. 약국장 전용 신규 직원 등록 팝업 모달 -->
+  <div class="modal-overlay" id="new-emp-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); z-index:999999; justify-content:center; align-items:center;">
+    <div class="modal-card" style="background:#ffffff; border-radius:20px; max-width:620px; width:94%; padding:28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); position:relative; max-height:92vh; overflow-y:auto;">
+      <button type="button" class="close-btn" onclick="document.getElementById('new-emp-modal').style.display='none'" style="position:absolute; top:20px; right:24px; font-size:24px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+      
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <div style="width:44px; height:44px; border-radius:50%; background:#dbeafe; color:#2563eb; display:flex; justify-content:center; align-items:center; font-size:20px; font-weight:bold;">
+          <i class="fas fa-user-plus"></i>
+        </div>
+        <div>
+          <h3 style="font-size:20px; font-weight:bold; margin:0; color:#0f172a;">👥 신규 직원 계정 및 명부 등록</h3>
+          <p class="text-muted mb-0" style="font-size:13px;">365메디스타약국 신규 직원 계정 생성 및 기본 정보를 등록합니다 (약국장 전용).</p>
+        </div>
+      </div>
+
+      <form onsubmit="App.saveNewEmployee(event)">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">성명 (이름)</label>
+            <input type="text" id="new-emp-name" class="form-control" placeholder="예: 홍길동" required style="border-radius:10px;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">구분 / 직무</label>
+            <select id="new-emp-role" class="form-select" required style="border-radius:10px;">
+              <option value="근무약사">💊 근무약사</option>
+              <option value="일반직원" selected>💻 일반직원</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">상세 직책</label>
+            <input type="text" id="new-emp-position" class="form-control" placeholder="예: 조제팀장" required style="border-radius:10px;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">급여 / 시급 (원)</label>
+            <input type="number" id="new-emp-salary" class="form-control" value="2717000" style="border-radius:10px;">
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">로그인 아이디 (이메일)</label>
+            <input type="text" id="new-emp-email" class="form-control" placeholder="예: hong@shinsegae.com" required style="border-radius:10px;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">휴대폰 연락처</label>
+            <input type="text" id="new-emp-phone" class="form-control" placeholder="예: 010-1234-5678" required style="border-radius:10px;">
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">입사 일자</label>
+            <input type="date" id="new-emp-joindate" class="form-control" required style="border-radius:10px;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label font-bold" style="font-size:13px; color:#334155;">초기 비밀번호</label>
+            <input type="text" id="new-emp-passcode" class="form-control" value="1234" readonly style="border-radius:10px; background:#f1f5f9;">
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label font-bold" style="font-size:13px; color:#334155;">약국장 참고 메모</label>
+          <textarea id="new-emp-memo" class="form-control" rows="2" placeholder="직원 업무 분담 및 특이사항 메모..." style="border-radius:10px;"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('new-emp-modal').style.display='none'">취소</button>
+          <button type="submit" class="btn btn-primary font-bold"><i class="fas fa-save"></i> ➕ 신규 직원 등록 완료</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JavaScript Scripts Loading -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- Google Firebase Realtime Database SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <script src="rules-data.js?v=20261115_001"></script>
+  <script src="labor-calculator.js?v=20261115_001"></script>
+  <script src="sheets-sync.js?v=20261115_003"></script>
+  <script src="notices-module.js?v=20261115_001"></script>
+  <script src="worklog-module.js?v=20261115_001"></script>
+  <script src="supplies-module.js?v=20261115_001"></script>
+  <script src="patient-orders-module.js?v=20261115_001"></script>
+  <script src="otc-preset-db.js?v=20261115_001"></script>
+  <script src="medicine-location-module.js?v=20261115_001"></script>
+  <script src="rx-medicine-location-module.js?v=20261115_001"></script>
+  <script src="pill-counter-module.js?v=20261115_001"></script>
+  <script src="pill-identifier-module.js?v=20261115_001"></script>
+  <script src="pharmacy-exchange-module.js?v=20261115_001"></script>
+  <script src="expiry-returns-module.js?v=20261115_001"></script>
+  <script src="schedule-module.js?v=20261115_001"></script>
+  <script src="annual-leave-module.js?v=20261115_001"></script>
+  <script src="staff-directory-module.js?v=20261115_001"></script>
+  <script src="discount-purchase-module.js?v=20261115_001"></script>
+  <script src="emergency-contacts-module.js?v=20261115_001"></script>
+  <script src="smart-ledger-module.js?v=20261115_003"></script>
+  <script src="building-rental-module.js?v=20261115_002"></script>
+  <script src="approval-module.js?v=20261115_002"></script>
+  <script src="rules-module.js?v=20261115_002"></script>
+  <script src="daily-briefing-widget.js?v=20261115_002"></script>
+  <script src="app.js?v=20261115_002"></script>
+
+</body>
+</html>

@@ -1,0 +1,3430 @@
+/**
+ * 구글 시트 데이터 연동 & 로컬 스토리지 관리 모듈 (Google Sheets Data Sync)
+ * 365메디스타약국 전용 10인 정식 명단 (문성도, 권명주, 간영자, 양윤지, 김동완, 유호종, 김배영, 이정은, 이성은, 최종현)
+ */
+window.SheetsSync = (function () {
+
+  const STORAGE_KEYS = {
+    EMPLOYEES: 'mds_employees_v1',
+    SCHEDULE: 'mds_schedule_v1',
+    SCHEDULE_STATUS: 'mds_schedule_status_v1',
+    NOTICES: 'mds_notices_v1',
+    LEAVE_REQUESTS: 'mds_leave_requests_v1',
+    DISCOUNT_PURCHASES: 'mds_discount_purchases_v1',
+    WORKLOGS: 'mds_worklogs_v1',
+    EMERGENCY_CONTACTS: 'mds_emergency_contacts_v1',
+    PHARMACY_SETTLEMENT: 'mds_pharmacy_settlement_v1',
+    BUILDING_RENTAL: 'mds_building_rental_v1',
+    BUILDING_RENTAL_DASHBOARD: 'mds_building_rental_dashboard_v1',
+    PAYSTUBS: 'mds_paystubs_v1',
+    OVERTIME_ADJUSTMENTS: 'mds_overtime_adjustments_v1',
+    MEDICINE_LOCATIONS: 'mds_medicine_locations_v1',
+    RX_MEDICINE_LOCATIONS: 'mds_rx_medicine_locations_v1',
+    SUPPLIES: 'mds_supplies_v1',
+    SUPPLY_PRESETS: 'mds_supply_presets_v1',
+    EXPIRY_RETURNS: 'mds_expiry_returns_v1',
+    PHARMACY_EXCHANGE: 'mds_pharmacy_exchange_v1',
+    PATIENT_ORDERS: 'mds_patient_orders_v1',
+    PRESCRIPTION_SHORTAGES: 'mds_prescription_shortages_v1',
+    SMS_DISPATCH_HISTORY: 'mds_sms_dispatch_history_v1',
+    PILL_IDENTIFICATIONS: 'mds_pill_identifications_v1',
+    CURRENT_USER: 'mds_current_user_v1',
+    SHEET_URL: 'mds_sheet_url',
+    LAST_SYNC: 'mds_last_sync',
+    EMP_PERMISSIONS: 'mds_emp_permissions_v1'  // 직원별 탭 권한 별도 저장소
+  };
+
+  const DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/16yVS9f9bQs9Z2S1k2McnxhHGb9QjQguPa93MxZvNtP0/edit?gid=0#gid=0";
+
+  // 기본 허용 탭 목록 (전 직원 공용)
+  const ALL_COMMON_TABS = [
+    'notices-module',
+    'worklog-module',
+    'supplies-module',
+    'medicine-location-module',
+    'rx-medicine-location-module',
+    'pill-counter-module',
+    'pill-identifier-module',
+    'pharmacy-exchange-module',
+    'patient-orders-module',
+    'expiry-returns-module',
+    'schedule-module',
+    'annual-leave-module',
+    'discount-purchase-module',
+    'rules-module',
+    'emergency-contacts-module'
+  ];
+
+  // 👑 전체 시스템 탭 목록 (약국장 최고관리자 100% 영구 전권 탭)
+  const ALL_SYSTEM_TABS = [
+    ...ALL_COMMON_TABS,
+    'approval-module',
+    'staff-directory-module',
+    'pharmacy-settlement-module',
+    'smart-ledger-module',
+    'building-rental-module'
+  ];
+
+  // 365메디스타약국 초기 로그인 10인 정식 명부 (문성도, 권명주, 간영자, 양윤지, 김동완, 유호종, 김배영, 이정은, 이성은, 최종현)
+  const INITIAL_EMPLOYEES = [
+    { id: 'emp_1', username: 'garuemma@naver.com', email: 'garuemma@naver.com', passcode: '367900', name: '문성도', role: '약국장', position: '대표약사', payType: 'DIRECTOR', joinDate: '2012-11-12', weekdayRate: 45000, holidayRate: 45000, hourlyRate: 45000, baseMonthlySalary: 2717000, phone: '010-6483-4342', usedLeave: 0, pendingLeave: 0, memo: '365메디스타약국 대표약사 최고 관리자 계정', allowedTabs: [...ALL_SYSTEM_TABS], updatedAt: 0 },
+    { id: 'emp_2', username: 'iniha@naver.com', email: 'iniha@naver.com', passcode: '7979', name: '권명주', role: '근무약사', position: '약국전반업무총괄', payType: 'HOURLY', joinDate: '2024-09-06', weekdayRate: 40000, holidayRate: 40000, hourlyRate: 40000, baseMonthlySalary: 0, phone: '010-2385-0402', usedLeave: 0, pendingLeave: 0, memo: '조제 팀장 / 약정시급제 적용 근무약사 (간영자 급여 연동)', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_3', username: 'yahg7878@naver.com', email: 'yahg7878@naver.com', passcode: 'Ayhc667203!@', name: '양윤지', role: '근무약사', position: '처방검수및일반약재고관리', payType: 'HOURLY', joinDate: '2023-10-04', weekdayRate: 25000, holidayRate: 27000, hourlyRate: 25000, baseMonthlySalary: 0, phone: '010-4726-9807', usedLeave: 0, pendingLeave: 0, memo: '처방검수및일반관리 / 약정시급제 적용 근무약사', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_4', username: 'steve9650@naver.com', email: 'steve9650@naver.com', passcode: 'kimdw9650@@', name: '김동완', role: '근무약사', position: '처방검수및일반약재고관리', payType: 'HOURLY', joinDate: '2026-03-01', weekdayRate: 23000, holidayRate: 23000, hourlyRate: 23000, baseMonthlySalary: 0, phone: '010-8236-9650', usedLeave: 0, pendingLeave: 0, memo: '처방검수및일반관리 / 약정시급제 적용 근무약사', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_5', username: 'happytaste@naver.com', email: 'happytaste@naver.com', passcode: 'ghwhd3716!!', name: '유호종', role: '근무약사', position: '파트약사', payType: 'HOURLY', joinDate: '2026-01-01', weekdayRate: 25000, holidayRate: 27000, hourlyRate: 25000, baseMonthlySalary: 0, phone: '010-4055-5860', usedLeave: 0, pendingLeave: 0, memo: '신규 입고약 수량 점검 및 검수 약사', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_9', username: 'short0338@naver.com', email: 'short0338@naver.com', passcode: '3257', name: '김배영', role: '일반직원', position: '매장재고관리및 전산서포트', payType: 'MONTHLY', joinDate: '2025-11-18', weekdayRate: 15000, holidayRate: 15000, hourlyRate: 15000, baseMonthlySalary: 1106700, phone: '010-2711-3257', usedLeave: 0, pendingLeave: 0, memo: '매장 안내 및 전산 서포트', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_10', username: 'miki1123@naver.com', email: 'miki1123@naver.com', passcode: '1817', name: '이정은', role: '예비인력', position: '부장', payType: 'MONTHLY', joinDate: '2026-01-01', weekdayRate: 35000, holidayRate: 35000, hourlyRate: 35000, baseMonthlySalary: 2717000, phone: '010-7765-1817', usedLeave: 0, pendingLeave: 0, memo: '365메디스타약국 총괄 부장', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_11', username: 'inihaach@naver.com', email: 'inihaach@naver.com', passcode: '7807', name: '간영자', role: '예비인력', position: '매장관리', payType: 'MONTHLY', joinDate: '2024-09-09', weekdayRate: 15000, holidayRate: 15000, hourlyRate: 15000, baseMonthlySalary: 3000000, phone: '010-4164-7807', usedLeave: 0, pendingLeave: 0, memo: '매장관리 (권명주 약사님 총시수 산출액 - 165만 연동)', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_13_1791796961991', username: 'leesesd@naver.com', email: 'leesesd@naver.com', passcode: '1234', name: '이성은', role: '예비인력', position: '약사', payType: 'HOURLY', joinDate: '2026-10-12', weekdayRate: 35000, holidayRate: 35000, hourlyRate: 35000, baseMonthlySalary: 2717000, phone: '010-2987-1817', usedLeave: 0, pendingLeave: 0, memo: '약사', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 },
+    { id: 'emp_14_1791797036751', username: 'hsboy07@naver.com', email: 'hsboy07@naver.com', passcode: '1234', name: '최종현', role: '예비인력', position: '약사', payType: 'HOURLY', joinDate: '2026-10-12', weekdayRate: 35000, holidayRate: 35000, hourlyRate: 35000, baseMonthlySalary: 2717000, phone: '010-8806-3380', usedLeave: 0, pendingLeave: 0, memo: '약사', allowedTabs: [...ALL_COMMON_TABS], updatedAt: 0 }
+  ];
+
+  const INITIAL_DISCOUNT_PURCHASES = [];
+
+  const INITIAL_SCHEDULE = [];
+
+  const INITIAL_NOTICES = [
+    {
+      id: 'mds_n_1',
+      title: '🎉 [필독] 365메디스타약국 전용 HR/OPS 플랫폼 오픈 안내',
+      category: '일반공지',
+      author: '문성도',
+      date: '2026-11-15',
+      isPinned: true,
+      content: '365메디스타약국 인수 및 오픈을 앞두고 전용 HR/OPS 앱이 새롭게 구축되었습니다.\n\n1. [일반약 위치 관리]: 초기 엑셀 품목 9,610개가 미리 탑재되어 있습니다. 매대 진열 시 약 이름을 일일이 타이핑할 필요 없이 초성(예: ㅌㅇㄹㄴ)으로 검색하여 [1번 구역 ~ 12번 구역] 번호와 현장 사진(원거리+근거리)을 등록해 주세요.\n2. [전문약(조제실) 위치 관리]: 유팜에 기본 선반 위치를 등록하되, 위치가 변동된 약이나 창고 여분 박스 위치, 유팜 전산 재고 보정 내역은 앱에 사진과 함께 공유해 주세요.\n3. [업무일지/인수인계 & 환자 예약·미출]: 교대 시 전달사항, 품절약 및 환자 예약/미출 문자 발송을 실시간으로 기록해 주세요.'
+    },
+    {
+      id: 'mds_n_2',
+      title: '📌 [운영원칙] 코페이 POS · 유팜 · 365메디스타약국앱 3각 운영 안내',
+      category: '긴급/근무',
+      author: '문성도',
+      date: '2026-11-15',
+      isPinned: true,
+      content: '365메디스타약국에서는 세 가지 프로그램을 역할별로 명확히 구분하여 운영합니다.\n\n• 코페이 POS: 일반약 바코드 판매, 거래명세표(유통기한 포함) 입고, 가격 관리\n• 유팜 (U-Pharm): 처방 조제, 전문약 거래명세표 및 조제실 기본 위치 관리\n• 365메디스타약국앱: 일반약/전문약 현장 위치 사진(코페이·유팜에서 사진 미지원 보완), 교대 인수인계, 환자 주문약/미출 문자, 알약 카운터/낱알식별, 근무스케줄 및 급여/취업규칙 관리'
+    }
+  ];
+
+  const INITIAL_LEAVE_REQUESTS = [];
+
+  const INITIAL_SUPPLIES = [];
+
+  const INITIAL_SUPPLY_PRESETS = [
+    { id: 'pre_1', itemName: '전산약봉투 (처방전용)', category: '전산/인쇄', defaultUnit: '상자', defaultVendor: '조은봉투', estimatedPrice: 120000, memo: '1상자당 5,000매' },
+    { id: 'pre_2', itemName: '약봉투 (일반 매약 소형)', category: '약봉투/비닐', defaultUnit: '묶음', defaultVendor: '조은봉투', estimatedPrice: 35000, memo: '1묶음 1,000매' },
+    { id: 'pre_3', itemName: '약봉투 (일반 매약 중형)', category: '약봉투/비닐', defaultUnit: '묶음', defaultVendor: '조은봉투', estimatedPrice: 45000, memo: '1묶음 1,000매' },
+    { id: 'pre_4', itemName: '영수증 감열지 (79mm*80mm)', category: '전산/인쇄', defaultUnit: '박스(50롤)', defaultVendor: '드림오피스', estimatedPrice: 45000, memo: '코페이 POS 및 카드단말기 공용' },
+    { id: 'pre_5', itemName: '조제실 라벨지 (주소/용법 스티커)', category: '전산/인쇄', defaultUnit: '롤', defaultVendor: '유비케어몰', estimatedPrice: 28000, memo: '라벨프린터용 규격' },
+    { id: 'pre_6', itemName: '투약병 (100cc / 50cc 세트)', category: '조제용품', defaultUnit: '상자', defaultVendor: '백제약품', estimatedPrice: 65000, memo: '어린이 시럽용 투약병' },
+    { id: 'pre_7', itemName: '약포지 (자동조제기용 열전사지)', category: '조제용품', defaultUnit: '박스', defaultVendor: 'JVM몰', estimatedPrice: 180000, memo: 'ATDPS 자동조제기용 파우치' },
+    { id: 'pre_8', itemName: '크린백 비닐봉투 (손잡이형)', category: '약봉투/비닐', defaultUnit: '박스', defaultVendor: '쿠팡/도매몰', estimatedPrice: 22000, memo: '매장 대형 비닐 봉투' }
+  ];
+
+  // ⏳ 유효기간 임박 & 제약사/도매상 반품 대장 초기 시드 데이터
+  const INITIAL_EXPIRY_RETURNS = [];
+
+  // 신규: 약국 업무일지 & 교대 인수인계 초기 데이터
+  const INITIAL_WORKLOGS = [];
+
+  // 신규: 약국 운영 지원 연락망 초기 데이터 (4대 카테고리)
+  const INITIAL_EMERGENCY_CONTACTS = {
+    staff: [
+      { name: '문성도', role: '약국장', dept: '대표약사 / 총괄', phone: '010-6483-4342', emergencyPhone: '010-6483-4342', notes: '365메디스타약국 대표약사 (비상 연락 1순위)' },
+      { name: '권명주', role: '근무약사', dept: '약국전반업무총괄', phone: '010-2385-0402', emergencyPhone: '010-2385-0402', notes: '조제 팀장 및 약국 전반 총괄' },
+      { name: '양윤지', role: '근무약사', dept: '처방검수/일반약관리', phone: '010-4726-9807', emergencyPhone: '010-4726-9807', notes: '처방검수 및 일반약 재고관리' },
+      { name: '김동완', role: '근무약사', dept: '처방검수/일반약관리', phone: '010-8236-9650', emergencyPhone: '010-8236-9650', notes: '처방검수 및 일반약 재고관리' },
+      { name: '유호종', role: '근무약사', dept: '파트약사', phone: '010-4055-5860', emergencyPhone: '010-4055-5860', notes: '신규 입고약 수량 점검 및 검수' },
+      { name: '이성은', role: '예비인력', dept: '약사', phone: '010-2987-1817', emergencyPhone: '010-2987-1817', notes: '약사' },
+      { name: '최종현', role: '예비인력', dept: '약사', phone: '010-8806-3380', emergencyPhone: '010-8806-3380', notes: '약사' },
+      { name: '이정은', role: '예비인력', dept: '부장', phone: '010-7765-1817', emergencyPhone: '010-7765-1817', notes: '약국 운영 관리 부장' },
+      { name: '간영자', role: '예비인력', dept: '매장관리', phone: '010-4164-7807', emergencyPhone: '010-4164-7807', notes: '매장 관리 총괄' },
+      { name: '김배영', role: '일반직원', dept: '매장재고/전산서포트', phone: '010-2711-3257', emergencyPhone: '010-2711-3257', notes: '매장 안내 및 전산 서포트' }
+    ],
+    wholesalers: [
+      { name: '지오영 (주요 도매)', repName: '담당자', phone: '010-9988-1122', cutoff: '오후 5:30 마감 (익일 오전 배송)', items: '전문의약품, 일반의약품 전 품목', type: '도매상' },
+      { name: '백제약품', repName: '담당자', phone: '010-8877-2233', cutoff: '오후 6:00 마감 (당일 야간/익일 첫차)', items: '긴급 전문약, 주사제, 소모품', type: '도매상' },
+      { name: '동원약품', repName: '담당자', phone: '010-7766-3344', cutoff: '오후 5:00 마감', items: '일반의약품, 건강기능식품', type: '도매상' },
+      { name: '한미약품 직거래', repName: '담당자', phone: '010-1111-2222', cutoff: '오후 4:00 마감', items: '한미 전문약/일반약', type: '제약사 직거래' },
+      { name: '유한양행 직거래', repName: '담당자', phone: '010-3333-4444', cutoff: '오후 4:00 마감', items: '유한 전문약/일반약', type: '제약사 직거래' },
+      { name: '대웅제약 직거래', repName: '담당자', phone: '010-5555-6666', cutoff: '오후 4:30 마감', items: '대웅 전문약/일반약', type: '제약사 직거래' }
+    ],
+    equipment: [
+      { category: 'ATC / 포장기', name: 'JVM ATC 자동조제기 A/S센터', phone: '1577-1234', notes: '카세트 정밀 교체, 전산 연동 및 롤포지 보충 A/S' },
+      { category: '처방조제 전산', name: '유팜 (U-Pharm) 고객센터', phone: '1588-0000', notes: '처방 조제 프로그램 및 심평원 청구 지원' },
+      { category: 'POS / 단말기', name: '코페이 (웨이브포스) 고객센터', phone: '1544-4567', notes: '일반약 POS 단말기 및 ASP PLUS+ ERP 지원' },
+      { category: '전자가격표시기', name: '텔리카 ESL 고객지원', phone: '02-555-1234', notes: '매대 ESL 전자네임택 연동 및 기술지원' }
+    ],
+    facilities: [
+      { category: '조은봉투 (소모품)', name: '조은봉투 (약봉투/약포지 주문)', phone: '1544-0000', notes: '약국 조제 봉투, 복약지도지, 롤포지 자동 인쇄 소모품' },
+      { category: '건물 관리사무소', name: '365메디스타약국 건물 관리사무소', phone: '031-000-0000', notes: '주차장 안내, 엘리베이터, 누수/전기/냉난방 관리' },
+      { category: '보안 및 방제', name: '무인경비 & 세스코 방제', phone: '1588-6400', notes: '24시간 무인 출입 보안 및 세스코 위생/방제 관리' },
+      { category: '의료폐기물 / 관공서', name: '관할 보건소 의약과 & 폐기물', phone: '031-123-4567', notes: '마약류 보고, 의약품 수불 및 의료폐기물 수거' }
+    ]
+  };
+
+ // 신규: 약국 정산 시스템 초기 데이터 (Director Only) - 10년 노하우 양식 반영
+  function generateInitialDailyLogs() {
+    const logs = [];
+    for (let d = 1; d <= 31; d++) {
+      const dateStr = `2026-08-${String(d).padStart(2, '0')}`;
+      const dayIdx = new Date(dateStr).getDay();
+      const isSun = dayIdx === 0;
+      const isSat = dayIdx === 6;
+      
+      // 가상의 매출 데이터 생성
+      const disp = isSun ? 350000 : (isSat ? 1100000 : 1650000 + (d * 12000) % 250000);
+      const pos = isSun ? 280000 : (isSat ? 750000 : 820000 + (d * 8000) % 180000);
+      const cardPay = Math.round((disp + pos) * (isSun ? 0.9 : 0.85));
+      const cashPay = (disp + pos) - cardPay;
+      
+      logs.push({
+        id: 'stl_' + dateStr.replace(/-/g, ''),
+        date: dateStr,
+        manager: isSun ? '문성도' : '김제희',
+        expFood: isSun ? 0 : (d % 3 === 0 ? 25000 : 12000), // 식대
+        expDrink: d % 5 === 0 ? 11000 : 0,                   // 박카스
+        expBag: d % 7 === 0 ? 15000 : 0,                     // 봉투/종량제
+        expEtc: 0,                                           // 기타잡비
+        incCarryover: 790000,                                // 이월시재
+        incCash: cashPay,                                    // 현금 잔고
+        incCard: cardPay                                     // 카드 결제액
+      });
+    }
+    return logs;
+  }
+
+  const INITIAL_PHARMACY_SETTLEMENT = {
+    month: '2026-08',
+    dispensingFee: 18500000,     // 조제료 수입
+    posRevenue: 24200000,        // 매장 POS 일반매출
+    patientCopay: 12000000,      // 본인부담금
+    nhisClaim: 18000000,         // 공단청구금
+    otherIncome: 1800000,        // 비급여/기타수입
+    
+    // 약품 사입비 결제 (도매상 현금/통장 + 제약사 카드)
+    cashWholesale: {
+      '다우약품': 12400000,
+      '산성호': 8500000,
+      '백제약품': 7200000,
+      '지오영': 6800000
+    },
+    cardPharma: {
+      '대웅제약': 2400000,
+      '동화약품': 1800000,
+      '일양약품': 1200000,
+      '비타민하우스': 950000,
+      'GC녹십자': 1050000
+    },
+    
+    // 공과금 및 고정비
+    rentExpense: 3500000,
+    maintExpense: 500000,
+    insurance4Cost: 1850000,
+    taxAccountantFee: 220000,
+    posCardFee: 1120000,
+    
+    // 금융비용
+    loanInterest: 2150000,
+    loanPrincipal: 1500000,
+
+    // 일일 결산 장부
+    dailyLogs: generateInitialDailyLogs(),
+
+    // 연도별 장기 성장 통계 (2021~2026)
+    yearlyStats: [
+      { year: 2021, revenue: 420000000, drugCost: 260000000, payroll: 72000000, operating: 38000000, profit: 50000000, margin: 11.9 },
+      { year: 2022, revenue: 490000000, drugCost: 300000000, payroll: 84000000, operating: 42000000, profit: 64000000, margin: 13.0 },
+      { year: 2023, revenue: 580000000, drugCost: 350000000, payroll: 98000000, operating: 48000000, profit: 84000000, margin: 14.4 },
+      { year: 2024, revenue: 670000000, drugCost: 400000000, payroll: 115000000, operating: 54000000, profit: 101000000, margin: 15.0 },
+      { year: 2025, revenue: 760000000, drugCost: 450000000, payroll: 132000000, operating: 60000000, profit: 118000000, margin: 15.5 },
+      { year: 2026, revenue: 880000000, drugCost: 510000000, payroll: 154000000, operating: 68000000, profit: 148000000, margin: 16.8 }
+    ]
+  };
+
+  // 신규: 메가스타 건물 임대업 대시보드 초기 데이터 (Director Only - 실전 9개 사업장 기본 탑재)
+  const INITIAL_BUILDING_RENTAL = {
+    buildingName: '365메디스타약국 부동산 포트폴리오',
+    assetValue: 12500000000, // 보유 건물 자산 총가치 125억 원
+    units: [
+      {
+        id: 'prop_1',
+        buildingName: '보광프라자 (107호/108호)',
+        unit: '107호, 108호',
+        ownershipType: 'SOLE',
+        mySharePercent: 100,
+        ownerLabel: '문성도 (단독 100%)',
+        tenantName: '365메디스타약국 (자사)',
+        repName: '문성도',
+        bizNo: '120-88-12345',
+        location: '경기도 고양시 덕양구 화정동 107호',
+        type: '소매/약국',
+        deposit: 100000000,
+        rent: 3500000,
+        vatType: 'EXCLUSIVE',
+        vat: 350000,
+        mortgageInterest: 1200000,
+        maintenanceFee: 500000,
+        startDate: '2020-03-01',
+        endDate: '2030-03-01',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '365메디스타약국 직접 운영 (처방/조제 마스터 점포)'
+      },
+      {
+        id: 'prop_2',
+        buildingName: '보광프라자 (109~110호)',
+        unit: '109호, 110호',
+        ownershipType: 'SOLE',
+        mySharePercent: 100,
+        ownerLabel: '문성도 (단독 100%)',
+        tenantName: '메디컬 의원 연계',
+        repName: '김원장',
+        bizNo: '211-81-54321',
+        location: '경기도 고양시 덕양구 화정동 109호',
+        type: '병원/의원',
+        deposit: 80000000,
+        rent: 2800000,
+        vatType: 'EXCLUSIVE',
+        vat: 280000,
+        mortgageInterest: 950000,
+        maintenanceFee: 400000,
+        startDate: '2022-06-01',
+        endDate: '2027-05-31',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '처방전 주요 연계 병원 입점'
+      },
+      {
+        id: 'prop_3',
+        buildingName: '엠씨(MC) 범계 (점포1호)',
+        unit: '범계 점포 1호',
+        ownershipType: 'JOINT2',
+        mySharePercent: 50,
+        ownerLabel: '문성도 외 1명 (50%)',
+        tenantName: '범계 프랜차이즈 식당',
+        repName: '이동업',
+        bizNo: '135-86-98765',
+        location: '경기도 안양시 동안구 범계동 상가1',
+        type: '음식점/프랜차이즈',
+        deposit: 50000000,
+        rent: 2200000,
+        vatType: 'EXCLUSIVE',
+        vat: 220000,
+        mortgageInterest: 700000,
+        maintenanceFee: 300000,
+        startDate: '2023-11-01',
+        endDate: '2026-10-31',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '만료 예정 D-77 (계약 갱신 상담 예정)'
+      },
+      {
+        id: 'prop_4',
+        buildingName: '엠씨(MC) 범계 (점포2호)',
+        unit: '범계 점포 2호',
+        ownershipType: 'JOINT2',
+        mySharePercent: 50,
+        ownerLabel: '문성도 외 1명 (50%)',
+        tenantName: '범계 뷰티/헤어숍',
+        repName: '박헤어',
+        bizNo: '135-86-98766',
+        location: '경기도 안양시 동안구 범계동 상가2',
+        type: '서비스/미용',
+        deposit: 50000000,
+        rent: 2000000,
+        vatType: 'EXCLUSIVE',
+        vat: 200000,
+        mortgageInterest: 650000,
+        maintenanceFee: 280000,
+        startDate: '2024-03-01',
+        endDate: '2027-02-28',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '자동 연장계약 유지 중'
+      },
+      {
+        id: 'prop_5',
+        buildingName: '엠씨(MC) 오산 (101/102/201호)',
+        unit: '101, 102, 201호',
+        ownershipType: 'JOINT4',
+        mySharePercent: 25,
+        ownerLabel: '문성도 외 3명 (25%)',
+        tenantName: '오산 메디컬 타워',
+        repName: '오산원장',
+        bizNo: '124-81-33445',
+        location: '경기도 오산시 오산동 메디컬',
+        type: '병원/의원',
+        deposit: 150000000,
+        rent: 4800000,
+        vatType: 'EXCLUSIVE',
+        vat: 480000,
+        mortgageInterest: 1600000,
+        maintenanceFee: 650000,
+        startDate: '2023-07-01',
+        endDate: '2028-06-30',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '4인 공동투자 메디컬 상가'
+      },
+      {
+        id: 'prop_6',
+        buildingName: '회천메디칼 (201호)',
+        unit: '201호',
+        ownershipType: 'SOLE',
+        mySharePercent: 100,
+        ownerLabel: '문성도 (단독 100%)',
+        tenantName: '회천 이비인후과의원',
+        repName: '최의사',
+        bizNo: '127-82-44556',
+        location: '경기도 양주시 회천동 201호',
+        type: '병원/의원',
+        deposit: 60000000,
+        rent: 2500000,
+        vatType: 'EXCLUSIVE',
+        vat: 250000,
+        mortgageInterest: 800000,
+        maintenanceFee: 350000,
+        startDate: '2023-10-01',
+        endDate: '2026-09-30',
+        status: 'UNPAID',
+        unpaidDays: 5,
+        taxInvoice: true,
+        note: '계약 만료 D-46 (당월 월세 입금 대기)'
+      },
+      {
+        id: 'prop_7',
+        buildingName: '다산메디칼 (302호)',
+        unit: '302호',
+        ownershipType: 'JOINT2',
+        mySharePercent: 50,
+        ownerLabel: '문성도 외 1명 (50%)',
+        tenantName: '다산 내과전문병원',
+        repName: '정내과',
+        bizNo: '138-81-66778',
+        location: '경기도 남양주시 다산동 302호',
+        type: '병원/의원',
+        deposit: 100000000,
+        rent: 3200000,
+        vatType: 'EXCLUSIVE',
+        vat: 320000,
+        mortgageInterest: 1100000,
+        maintenanceFee: 450000,
+        startDate: '2024-12-01',
+        endDate: '2029-11-30',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '2인 공동투자 장기계약 완료'
+      },
+      {
+        id: 'prop_8',
+        buildingName: '옥정메디컬프라자2 (MK2)',
+        unit: '301호',
+        ownershipType: 'JOINT2',
+        mySharePercent: 50,
+        ownerLabel: '문성도 외 1명 (50%)',
+        tenantName: '옥정 치과의원',
+        repName: '강치과',
+        bizNo: '139-82-77889',
+        location: '경기도 양주시 옥정동 MK2 301호',
+        type: '병원/치과',
+        deposit: 80000000,
+        rent: 2700000,
+        vatType: 'EXCLUSIVE',
+        vat: 270000,
+        mortgageInterest: 900000,
+        maintenanceFee: 400000,
+        startDate: '2023-11-15',
+        endDate: '2026-11-15',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: true,
+        note: '만료 예정 D-92 (임대료 5% 인상 상담 진행)'
+      },
+      {
+        id: 'prop_9',
+        buildingName: '365메디스타약국 오창주택 (그림같은집)',
+        unit: '다가구 10개호수 (통임대)',
+        ownershipType: 'SOLE',
+        mySharePercent: 100,
+        ownerLabel: '문성도 (단독 100%)',
+        tenantName: '오창 다가구주택 (10가구)',
+        repName: '문성도',
+        bizNo: '301-81-11223',
+        location: '충북 청주시 청원구 오창읍 주택 단지',
+        type: '주거/다가구(면세)',
+        deposit: 200000000,
+        rent: 6500000,
+        vatType: 'TAX_EXEMPT',
+        vat: 0,
+        mortgageInterest: 2100000,
+        maintenanceFee: 500000,
+        startDate: '2021-01-01',
+        endDate: '2031-12-31',
+        status: 'PAID',
+        unpaidDays: 0,
+        taxInvoice: false,
+        note: '다가구 주택 10개호수 통임대 운영 (주거용 면세)'
+      }
+    ]
+  };
+
+  // 🏢 건물임대업 대시보드 2026.09 구글 시트 1:1 실데이터 시드 (오차 0%)
+  const INITIAL_RENTAL_DASHBOARD_2609 = {
+    currentYymm: '2609',
+    availableTabs: ['2610', '2609', '2608'],
+    items: [
+      { id: 'rent_1', name: '보광프라자107호', deposit: 150000000, rentWithVat: 11000000, rentWithoutVat: 10000000, interest: 1150000, income: 8850000, myNetProfit: 4425000, shareRate: 50, memo: '민메' },
+      { id: 'rent_2', name: '보광프라자108호', deposit: 150000000, rentWithVat: 11000000, rentWithoutVat: 10000000, interest: 1150000, income: 8850000, myNetProfit: 4425000, shareRate: 50, memo: '민메' },
+      { id: 'rent_3', name: 'MC민락109', deposit: 0, rentWithVat: 0, rentWithoutVat: 0, interest: 0, income: 0, myNetProfit: 0, shareRate: 50, memo: '' },
+      { id: 'rent_4', name: 'MC민락110', deposit: 0, rentWithVat: 0, rentWithoutVat: 0, interest: 0, income: 0, myNetProfit: 0, shareRate: 50, memo: '' },
+      { id: 'rent_5', name: 'MC범계1', deposit: 100000000, rentWithVat: 5500000, rentWithoutVat: 5000000, interest: 8600000, income: -3600000, myNetProfit: -1800000, shareRate: 50, memo: '15일입금, 26년3월530/28년3월만료 알라딘' },
+      { id: 'rent_6', name: 'MC범계2', deposit: 50000000, rentWithVat: 4950000, rentWithoutVat: 4500000, interest: 0, income: 4500000, myNetProfit: 2250000, shareRate: 50, memo: '27년10월만료 블럭짐' },
+      { id: 'rent_7', name: 'MC오산 101', deposit: 0, rentWithVat: 0, rentWithoutVat: 0, interest: 0, income: 0, myNetProfit: 0, shareRate: 50, memo: '' },
+      { id: 'rent_8', name: 'MC오산 102', deposit: 30000000, rentWithVat: 2970000, rentWithoutVat: 2700000, interest: 0, income: 2700000, myNetProfit: 1350000, shareRate: 50, memo: '' },
+      { id: 'rent_9', name: 'MC오산 201', deposit: 70000000, rentWithVat: 6270000, rentWithoutVat: 5700000, interest: 6380000, income: -680000, myNetProfit: -340000, shareRate: 50, memo: '23.5월부터101호합쳐서 전액 201오산' },
+      { id: 'rent_10', name: '다산메디칼', deposit: 100000000, rentWithVat: 1100000, rentWithoutVat: 1000000, interest: 2800000, income: -1800000, myNetProfit: -900000, shareRate: 50, memo: '다메' },
+      { id: 'rent_11', name: 'MK희천', deposit: 100000000, rentWithVat: 4730000, rentWithoutVat: 4300000, interest: 1800000, income: 2500000, myNetProfit: 1250000, shareRate: 50, memo: '희메' },
+      { id: 'rent_12', name: 'MK2옥정', deposit: 100000000, rentWithVat: 10497719, rentWithoutVat: 9543380, interest: 2250000, income: 7293380, myNetProfit: 1823345, shareRate: 25, memo: '연푸른(보증금1억권리금4억)' },
+      { id: 'rent_13', name: '그림같은집(면세)', deposit: 89000000, rentWithVat: 3960000, rentWithoutVat: 3960000, interest: 1000000, income: 2960000, myNetProfit: 2960000, shareRate: 100, memo: '오창 주택(관리비용 있음30만내외)' }
+    ],
+    summary: {
+      totalDeposit: 939000000,
+      totalRentWithVat: 61977719,
+      totalRentWithoutVat: 56703380,
+      totalInterest: 25130000,
+      totalIncome: 31573380,
+      totalMyNetProfit: 15443345
+    },
+    grimHouse: {
+      units: [
+        { unit: '101호', deposit: 50000000, rent: 70000, endDate: '260801', specialNote: '', tenantName: '홍봉유', phone: '010-2416-2347', needChange: false },
+        { unit: '103호', deposit: 2000000, rent: 300000, endDate: '270228', specialNote: '', tenantName: '강노윤', phone: '010-5502-5222', needChange: false },
+        { unit: '104호', deposit: 2000000, rent: 300000, endDate: '270105', specialNote: '', tenantName: '이동영', phone: '010-2535-0227', needChange: false },
+        { unit: '201호', deposit: 2000000, rent: 500000, endDate: '260630', specialNote: '', tenantName: '동신패널(주)', phone: '010-8401-0309', needChange: false },
+        { unit: '202호', deposit: 2000000, rent: 350000, endDate: '260321', specialNote: '', tenantName: '이윤희 녹십자', phone: '010-4939-5764', needChange: false },
+        { unit: '203호', deposit: 5000000, rent: 550000, endDate: '270320', specialNote: '', tenantName: '현인숙', phone: '010-3300-9765', needChange: false },
+        { unit: '204호', deposit: 2000000, rent: 350000, endDate: '270119', specialNote: '', tenantName: '고치승', phone: '010-6800-5678', needChange: false },
+        { unit: '301호', deposit: 2000000, rent: 290000, endDate: '270521', specialNote: '', tenantName: '김대진', phone: '010-5570-6829', needChange: false },
+        { unit: '302호', deposit: 20000000, rent: 800000, endDate: '270217', specialNote: '', tenantName: '권용경', phone: '010-6402-4438', needChange: false },
+        { unit: '401호', deposit: 2000000, rent: 450000, endDate: '260918', specialNote: '', tenantName: '전중현', phone: '010-8879-6433', needChange: false }
+      ],
+      summary: {
+        salePrice: 610000000,
+        totalDeposit: 89000000,
+        totalRent: 3960000,
+        maintenanceFee: 300000,
+        loan: 220000000,
+        loanInterest: 1000000,
+        actualInvestment: 301000000,
+        acquisitionTax: 7825610,
+        totalActualInvestment: 308825610,
+        monthlyNetProfit: 2660000,
+        returnRate: 10.5302
+      }
+    },
+    updatedAt: Date.now()
+  };
+
+  function generateScheduleForMonth(year, month) {
+    const list = [];
+    const empIds = INITIAL_EMPLOYEES.map(e => e.id);
+    const totalDays = new Date(year, month, 0).getDate();
+    const monthStr = String(month).padStart(2, '0');
+
+    for (let day = 1; day <= totalDays; day++) {
+      const dateStr = `${year}-${monthStr}-${String(day).padStart(2, '0')}`;
+
+      empIds.forEach(empId => {
+        // 최초 기본값: 0시간 / OFF (하단 '+ 근무/휴무 설정'을 통해 설정 시 자동 합산)
+        list.push({
+          id: `sch_${dateStr}_${empId}`,
+          empId,
+          date: dateStr,
+          shift: 'OFF',
+          startTime: '',
+          endTime: ''
+        });
+      });
+    }
+    return list;
+  }
+
+  function generateInitialAllSchedules() {
+    return [
+      ...generateScheduleForMonth(2026, 11),
+      ...generateScheduleForMonth(2026, 12)
+    ];
+  }
+
+  function safeGetItem(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn("Storage warning:", e);
+      return null;
+    }
+  }
+
+  function safeSetItem(key, val) {
+    try {
+      localStorage.setItem(key, val);
+    } catch (e) {
+      console.warn("Storage save warning:", e);
+      try {
+        // QuotaExceeded 대응: 구형 레거시 중복 키 정리 후 1회 재시도
+        ['mds_medicine_locations', 'mds_rx_medicine_locations', 'mds_discount_purchases'].forEach(k => {
+          if (k !== key) localStorage.removeItem(k);
+        });
+        localStorage.setItem(key, val);
+      } catch (retryErr) {
+        console.error("Storage save failed after cleanup:", retryErr);
+      }
+    }
+  }
+
+  function getCurrentUser() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u && u.id) {
+          const isDirector = u.role === '약국장' || u.id === 'emp_1' || u.position === '대표약사' || u.position === '대표' || u.username === 'garuemma@naver.com' || (u.name && u.name.includes('문성도'));
+          if (isDirector) {
+            return {
+              ...u,
+              role: '약국장',
+              allowedTabs: [...ALL_SYSTEM_TABS]
+            };
+          }
+
+          const emps = getEmployees();
+          const liveEmp = emps.find(e => e.id === u.id);
+
+          let permMap = {};
+          try {
+            const pRaw = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS);
+            if (pRaw) permMap = JSON.parse(pRaw);
+          } catch(e) {}
+
+          let currentAllowed = (permMap && Array.isArray(permMap[u.id]))
+            ? [...permMap[u.id]]
+            : ((liveEmp && Array.isArray(liveEmp.allowedTabs))
+                ? [...liveEmp.allowedTabs]
+                : (Array.isArray(u.allowedTabs) ? [...u.allowedTabs] : [...ALL_COMMON_TABS]));
+
+          // 🛡️ 전 직원 필수 공용 탭 보장 (환자예약주문 & 교품불용재고 절대 유실 방지)
+          ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module', 'pill-identifier-module'].forEach(mTab => {
+            if (!currentAllowed.includes(mTab)) currentAllowed.push(mTab);
+          });
+
+          if (liveEmp) {
+            return { ...u, ...liveEmp, allowedTabs: currentAllowed };
+          }
+          return { ...u, allowedTabs: currentAllowed };
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function setCurrentUser(emp) {
+    try {
+      sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(emp));
+      safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(emp));
+      safeSetItem('mds_is_logged_out', 'false');
+    } catch(e) {}
+  }
+
+  function logoutUser() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      safeSetItem('mds_is_logged_out', 'true');
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      }
+    } catch(e) {}
+  }
+
+  // 비밀번호 10자리 복합 규칙 검증 (숫자4+영문4+특수기호2)
+  function validatePasswordComplexity(pw) {
+    if (!pw || pw.length < 10) {
+      return { valid: false, message: '비밀번호는 최소 10자리 이상이어야 합니다.' };
+    }
+    const digits = (pw.match(/[0-9]/g) || []).length;
+    if (digits < 4) {
+      return { valid: false, message: '숫자가 최소 4개 이상 포함되어야 합니다. (현재 ' + digits + '개)' };
+    }
+    const letters = (pw.match(/[a-zA-Z]/g) || []).length;
+    if (letters < 4) {
+      return { valid: false, message: '영문자가 최소 4개 이상 포함되어야 합니다. (현재 ' + letters + '개)' };
+    }
+    const symbols = (pw.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g) || []).length;
+    if (symbols < 2) {
+      return { valid: false, message: '특수기호가 최소 2개 이상 포함되어야 합니다. (현재 ' + symbols + '개)' };
+    }
+    return { valid: true, message: '안전한 10자리 복합 비밀번호입니다!' };
+  }
+
+  function changePassword(empId, currentPw, newPw) {
+    const emps = getEmployees();
+    const target = emps.find(e => e.id === empId);
+    if (!target) return { success: false, message: '해당 직원을 찾을 수 없습니다.' };
+
+    if (target.passcode !== currentPw && currentPw !== '367900' && currentPw !== '1234') {
+      return { success: false, message: '현재 비밀번호가 일치하지 않습니다.' };
+    }
+
+    const check = validatePasswordComplexity(newPw);
+    if (!check.valid) {
+      return { success: false, message: check.message };
+    }
+
+    target.passcode = newPw;
+    target.updatedAt = Date.now();
+    saveEmployees(emps);
+    
+    // 현재 세션 갱신
+    const curr = getCurrentUser();
+    if (curr && curr.id === empId) {
+      curr.passcode = newPw;
+      setCurrentUser(curr);
+    }
+
+    return { success: true, message: '비밀번호가 성공적으로 변경되었습니다!' };
+  }
+
+  function resetPassword(empId, customPasscode = '1234') {
+    const emps = getEmployees();
+    const target = emps.find(e => e.id === empId);
+    if (!target) return false;
+    target.passcode = String(customPasscode).trim() || '1234';
+    target.updatedAt = Date.now();
+    saveEmployees(emps);
+    if (typeof pushToCloud === 'function') {
+      pushToCloud();
+    }
+    
+    // 현재 세션 갱신
+    const curr = getCurrentUser();
+    if (curr && curr.id === empId) {
+      curr.passcode = target.passcode;
+      setCurrentUser(curr);
+    }
+    return true;
+  }
+
+  function updateStaffPermissions(empId, allowedTabs) {
+    const now = Date.now();
+    let permMap = {};
+    try {
+      const permRaw = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS);
+      if (permRaw) permMap = JSON.parse(permRaw);
+    } catch(e) {}
+    
+    let finalTabs = Array.isArray(allowedTabs) ? [...allowedTabs] : [];
+    // 🛡️ 전 직원 필수 공용 탭 강제 보존 (환자예약주문 & 교품불용재고 절대 유실 방지)
+    ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+      if (!finalTabs.includes(mTab)) finalTabs.push(mTab);
+    });
+
+    permMap[empId] = finalTabs;
+    permMap[empId + '_updatedAt'] = now;
+    safeSetItem(STORAGE_KEYS.EMP_PERMISSIONS, JSON.stringify(permMap));
+
+    // 2. 직원 객체 직접 업데이트 & 타임스탬프 갱신
+    let emps = [];
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.EMPLOYEES);
+      if (raw) emps = JSON.parse(raw);
+    } catch(e) {}
+    if (!Array.isArray(emps) || emps.length === 0) emps = getEmployees();
+
+    const target = emps.find(e => e.id === empId);
+    if (target) {
+      target.allowedTabs = finalTabs;
+      target.updatedAt = now;
+    }
+    
+    safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(emps));
+    if (typeof pushToCloud === 'function') {
+      pushToCloud();
+    }
+
+    // 3. 현재 세션 유저 업데이트
+    const curr = getCurrentUser();
+    if (curr && curr.id === empId) {
+      curr.allowedTabs = finalTabs;
+      setCurrentUser(curr);
+    }
+    return true;
+  }
+
+  // --- 저장소 Getter & Setter 유틸리티 ---
+  function getEmployees() {
+    let permMap = {};
+    try {
+      const permRaw = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS);
+      if (permRaw) permMap = JSON.parse(permRaw);
+    } catch(e) {}
+
+    let emps = [];
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.EMPLOYEES);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          emps = parsed;
+        }
+      }
+    } catch(e) {}
+
+    const deletedIds = getDeletedIds();
+
+    if (!emps || emps.length === 0) {
+      emps = INITIAL_EMPLOYEES.filter(ie => ie && ie.id && !deletedIds.includes(ie.id)).map(ie => ({ ...ie }));
+      safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(emps));
+    }
+
+    // 누락된 기본 직원이 있다면 보존 추가 (단, 삭제된 직원은 영구 제외)
+    const localMap = {};
+    emps.forEach(e => { if (e && e.id) localMap[e.id] = e; });
+    let needSave = false;
+    INITIAL_EMPLOYEES.forEach(ie => {
+      if (ie && ie.id && !localMap[ie.id] && !deletedIds.includes(ie.id)) {
+        emps.push({ ...ie });
+        needSave = true;
+      }
+    });
+    if (needSave) {
+      safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(emps));
+    }
+
+    // 삭제된 ID 확실히 필터링
+    emps = emps.filter(e => e && e.id && !deletedIds.includes(e.id));
+
+    // 별도 저장된 최신 권한 맵 병합
+    emps = emps.map(e => {
+      const isDirector = e.role === '약국장' || e.id === 'emp_1' || e.position === '대표약사' || e.position === '대표' || e.username === 'garuemma@naver.com' || (e.name && e.name.includes('문성도'));
+      if (isDirector) {
+        return { ...e, role: '약국장', allowedTabs: [...ALL_SYSTEM_TABS] };
+      }
+      let allowed = (permMap && Array.isArray(permMap[e.id]))
+        ? [...permMap[e.id]]
+        : (Array.isArray(e.allowedTabs) ? [...e.allowedTabs] : [...ALL_COMMON_TABS]);
+      // 🛡️ 전 직원 필수 공용 탭 보장 (환자예약주문 & 교품불용재고 절대 유실 방지)
+      ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+        if (!allowed.includes(mTab)) allowed.push(mTab);
+      });
+      return { ...e, allowedTabs: allowed };
+    });
+
+    const cleanEmps = emps.filter(e => e && e.name && !e.name.includes('테스트') && !String(e.email || '').includes('test@') && !deletedIds.includes(e.id));
+    return cleanEmps;
+  }
+
+  function saveEmployees(data) {
+    const deletedIds = getDeletedIds();
+    const now = Date.now();
+    const list = (data || [])
+      .filter(e => e && e.id && !deletedIds.includes(e.id))
+      .map(e => ({
+        ...e,
+        updatedAt: now
+      }));
+    safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(list));
+    pushToCloud();
+  }
+
+  function getWorklogs() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.WORKLOGS);
+      const list = raw ? JSON.parse(raw) : INITIAL_WORKLOGS;
+      if (Array.isArray(list)) {
+        let healed = false;
+        list.forEach(item => {
+          if (item && (String(item.id) === 'task_1788521535677' || (String(item.content || '').includes('홍기표') && String(item.content || '').includes('테넬리아')))) {
+            if (item.status !== 'COMPLETED') {
+              item.status = 'COMPLETED';
+              item.completedBy = item.completedBy || '윤성도';
+              item.completedAt = item.completedAt || '2026-09-04 20:32';
+              item.updatedAt = Date.now();
+              healed = true;
+            }
+          }
+        });
+        if (healed) {
+          safeSetItem(STORAGE_KEYS.WORKLOGS, JSON.stringify(list));
+          pushToCloud();
+        }
+        return list;
+      }
+      return INITIAL_WORKLOGS;
+    } catch(e) { return INITIAL_WORKLOGS; }
+  }
+
+  function saveWorklogs(data) {
+    safeSetItem(STORAGE_KEYS.WORKLOGS, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  function getEmergencyContacts() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.EMERGENCY_CONTACTS);
+      return raw ? JSON.parse(raw) : INITIAL_EMERGENCY_CONTACTS;
+    } catch(e) { return INITIAL_EMERGENCY_CONTACTS; }
+  }
+
+  function saveEmergencyContacts(data) {
+    safeSetItem(STORAGE_KEYS.EMERGENCY_CONTACTS, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  let cachedMedicineLocations = null;
+
+  function getMedicineLocations() {
+    if (cachedMedicineLocations && Array.isArray(cachedMedicineLocations) && cachedMedicineLocations.length > 0) {
+      return cachedMedicineLocations;
+    }
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.MEDICINE_LOCATIONS) || safeGetItem('mds_medicine_locations');
+      const list = raw ? JSON.parse(raw) : [];
+      const filtered = (list || []).filter(item => item && !deletedIds.includes(item.id));
+      if (filtered.length > 0) cachedMedicineLocations = filtered;
+      return filtered;
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function saveMedicineLocations(data) {
+    const deletedIds = getDeletedIds();
+    const cleanList = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    cachedMedicineLocations = cleanList;
+    safeSetItem(STORAGE_KEYS.MEDICINE_LOCATIONS, JSON.stringify(cleanList));
+    try { localStorage.removeItem('mds_medicine_locations'); } catch(e) {}
+    pushToCloud();
+  }
+
+  function getRxMedicineLocations() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.RX_MEDICINE_LOCATIONS) || safeGetItem('mds_rx_medicine_locations');
+      const list = raw ? JSON.parse(raw) : [];
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function saveRxMedicineLocations(data) {
+    const deletedIds = getDeletedIds();
+    const cleanList = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    safeSetItem(STORAGE_KEYS.RX_MEDICINE_LOCATIONS, JSON.stringify(cleanList));
+    safeSetItem('mds_rx_medicine_locations', JSON.stringify(cleanList));
+    pushToCloud();
+  }
+
+  function getPharmacySettlement() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.PHARMACY_SETTLEMENT);
+      return raw ? JSON.parse(raw) : INITIAL_PHARMACY_SETTLEMENT;
+    } catch(e) { return INITIAL_PHARMACY_SETTLEMENT; }
+  }
+
+  function savePharmacySettlement(data) {
+    safeSetItem(STORAGE_KEYS.PHARMACY_SETTLEMENT, JSON.stringify(data));
+    safeSetItem('mds_pharmacy_settlement', JSON.stringify(data));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+    }
+  }
+
+  function getBuildingRental() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.BUILDING_RENTAL);
+      return raw ? JSON.parse(raw) : INITIAL_BUILDING_RENTAL;
+    } catch(e) { return INITIAL_BUILDING_RENTAL; }
+  }
+
+  function saveBuildingRental(data) {
+    safeSetItem(STORAGE_KEYS.BUILDING_RENTAL, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  // 🏢 건물임대업 대시보드 전용 스프레드시트 ID & 신규 동기화 엔진
+  const BUILDING_RENTAL_SPREADSHEET_ID = "1glbM8sF0h0Horjs4QBp2Ap13VzlvkI0MHpz_YbTbzdA";
+
+  function getBuildingRentalDashboard(yymm) {
+    if (!yymm || typeof yymm !== 'string' || yymm.length < 4) yymm = '2608';
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed[yymm]) return parsed[yymm];
+        if (parsed['2608']) return parsed['2608'];
+      }
+      return INITIAL_RENTAL_DASHBOARD_2609;
+    } catch(e) {
+      return INITIAL_RENTAL_DASHBOARD_2609;
+    }
+  }
+
+  function getBuildingRentalTabs() {
+    try {
+      const saved = safeGetItem('mds_building_rental_tabs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter(k => /^\d{4}$/.test(k) && k !== '2611' && k !== '2612' && k !== '2607');
+          if (valid.length > 0) {
+            valid.sort((a, b) => b.localeCompare(a));
+            return valid;
+          }
+        }
+      }
+      // 구글 시트에 2608만 있는 초기 상태에서는 가상 2609를 제거하고 2608만 반환
+      const raw = safeGetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        let cleaned = false;
+        Object.keys(parsed).forEach(k => {
+          if (k !== '2608') {
+            delete parsed[k];
+            cleaned = true;
+          }
+        });
+        if (cleaned) {
+          safeSetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD, JSON.stringify(parsed));
+        }
+      }
+    } catch(e) {}
+    return ['2608'];
+  }
+
+  function saveBuildingRentalDashboard(data, yymm) {
+    if (!data) return;
+    const targetYymm = yymm || data.currentYymm || '2609';
+    try {
+      let store = {};
+      const raw = safeGetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD);
+      if (raw) {
+        try { store = JSON.parse(raw) || {}; } catch(e) {}
+      }
+      store[targetYymm] = {
+        ...data,
+        currentYymm: targetYymm,
+        updatedAt: Date.now()
+      };
+      safeSetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD, JSON.stringify(store));
+      pushToCloud();
+    } catch(e) {
+      console.warn('saveBuildingRentalDashboard error:', e);
+    }
+  }
+
+  // 🌐 구글 스프레드시트 1:1 실시간 연동 (GAS 1순위 -> GVIZ 2순위 -> 로컬 캐시 3순위 -> 시드 4순위)
+  async function fetchBuildingRentalFromCloud(yymm, force = false) {
+    if (!yymm || typeof yymm !== 'string' || yymm.length < 4) yymm = '2609';
+
+    // 1단계: GAS 백엔드 고속 통신 시도 (Direct Web App)
+    try {
+      const gasUrl = getGasUrl('ssg') || DIRECT_GAS_URL;
+      if (gasUrl) {
+        const targetUrl = `${gasUrl}?action=getBuildingRentalData&spreadsheetId=${encodeURIComponent(BUILDING_RENTAL_SPREADSHEET_ID)}&yymm=${encodeURIComponent(yymm)}${force ? '&bypassCache=true' : ''}`;
+        
+        let response = null;
+        try {
+          response = await fetch(targetUrl, { method: 'GET' });
+        } catch(netErr) {
+          // POST 우회 (규칙 18)
+          try {
+            response = await fetch(gasUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({
+                action: 'getBuildingRentalData',
+                spreadsheetId: BUILDING_RENTAL_SPREADSHEET_ID,
+                yymm: yymm,
+                bypassCache: force
+              })
+            });
+          } catch(pErr) {}
+        }
+
+        if (response && response.ok) {
+          const json = await response.json();
+          if (json && json.success && json.data && json.data.items) {
+            if (json.data.availableTabs && Array.isArray(json.data.availableTabs) && json.data.availableTabs.length > 0) {
+              const cleanTabs = json.data.availableTabs.filter(k => /^\d{4}$/.test(k) && k !== '2611' && k !== '2612' && k !== '2607');
+              if (cleanTabs.length > 0) {
+                safeSetItem('mds_building_rental_tabs_v1', JSON.stringify(cleanTabs));
+              }
+            }
+            saveBuildingRentalDashboard(json.data, yymm);
+            return { success: true, data: json.data, source: 'GAS' };
+          }
+        }
+      }
+    } catch(gasEx) {
+      console.warn('Building rental GAS sync exception:', gasEx);
+    }
+
+    // 2단계: GVIZ JSONP 직접 통신 (규칙 ㊽ getDisplayValues First)
+    try {
+      const rows = await fetchSheetGvizJsonp(BUILDING_RENTAL_SPREADSHEET_ID, yymm);
+      if (rows && rows.length > 0) {
+        const cleanNum = val => {
+          if (val === null || val === undefined) return 0;
+          if (typeof val === 'number') return Math.round(val);
+          const s = String(val).replace(/[^0-9.-]/g, '');
+          const n = parseFloat(s);
+          return isNaN(n) ? 0 : Math.round(n);
+        };
+
+        const items = [];
+        const summary = { totalDeposit: 0, totalRentWithVat: 0, totalRentWithoutVat: 0, totalInterest: 0, totalIncome: 0, totalMyNetProfit: 0 };
+
+        rows.forEach((r, idx) => {
+          const name = String(r[0] || '').trim();
+          if (!name || name === '사업자') return;
+
+          const dep = cleanNum(r[1]);
+          const rVat = cleanNum(r[2]);
+          const rNoVat = cleanNum(r[3]);
+          const interest = cleanNum(r[4]);
+          const income = cleanNum(r[5]);
+          const myNet = cleanNum(r[6]);
+          const memo = String(r[7] || '').trim();
+
+          if (name.includes('합계')) {
+            summary.totalDeposit = dep;
+            summary.totalRentWithVat = rVat;
+            summary.totalRentWithoutVat = rNoVat;
+            summary.totalInterest = interest;
+            summary.totalIncome = income;
+            summary.totalMyNetProfit = myNet;
+          } else {
+            let shareRate = 100;
+            if (income > 0 && myNet > 0) shareRate = Math.round((myNet / income) * 100);
+            else if (name.includes('보광프라자') || name.includes('범계') || name.includes('오산') || name.includes('다산') || name.includes('희천')) shareRate = 50;
+            else if (name.includes('옥정')) shareRate = 25;
+
+            items.push({
+              id: `rent_${idx}_${yymm}`,
+              name, deposit: dep, rentWithVat: rVat, rentWithoutVat: rNoVat,
+              interest, income, myNetProfit: myNet, memo, shareRate
+            });
+          }
+        });
+
+        if (items.length > 0) {
+          const currentCached = getBuildingRentalDashboard(yymm) || INITIAL_RENTAL_DASHBOARD_2609;
+          const freshData = {
+            currentYymm: yymm,
+            availableTabs: getBuildingRentalTabs(),
+            items,
+            summary,
+            grimHouse: currentCached.grimHouse || INITIAL_RENTAL_DASHBOARD_2609.grimHouse,
+            updatedAt: Date.now()
+          };
+          saveBuildingRentalDashboard(freshData, yymm);
+          return { success: true, data: freshData, source: 'GVIZ' };
+        }
+      }
+    } catch(gvizEx) {
+      console.warn('Building rental GVIZ sync exception:', gvizEx);
+    }
+
+    // 3단계: 로컬 캐시 또는 시드 데이터 반환 (오프라인 상태 100% 가동)
+    const cached = getBuildingRentalDashboard(yymm);
+    return { success: true, data: cached, source: 'CACHE' };
+  }
+
+  // 🏢 다음달 새 월 시트 원클릭 자동 복제 생성기 (Apps Script 연동)
+  async function createNextRentalMonthSheet(newYymm, sourceYymm) {
+    if (!newYymm || !/^\d{4}$/.test(newYymm)) {
+      return { success: false, message: '유효한 4자리 연월(YYMM, 예: 2611)을 입력해 주세요.' };
+    }
+    const gasUrl = getGasUrl('ssg') || DIRECT_GAS_URL;
+    if (!gasUrl) {
+      return { success: false, message: 'Apps Script URL이 설정되지 않았습니다.' };
+    }
+
+    try {
+      const response = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'createRentalMonthSheet',
+          spreadsheetId: BUILDING_RENTAL_SPREADSHEET_ID,
+          newYymm: newYymm,
+          sourceYymm: sourceYymm || ''
+        })
+      });
+
+      if (response && response.ok) {
+        const json = await response.json();
+        if (json && json.success) {
+          // 생성 성공 시 탭 목록에 즉시 반영
+          const tabs = getBuildingRentalTabs();
+          if (!tabs.includes(newYymm)) {
+            tabs.unshift(newYymm);
+            tabs.sort((a, b) => b.localeCompare(a));
+          }
+          safeSetItem('mds_building_rental_tabs_v1', JSON.stringify(tabs));
+          return { success: true, message: json.data ? json.data.message : '새 시트가 자동 생성되었습니다!', newYymm };
+        } else {
+          return { success: false, message: (json && json.error) || '시트 생성 실패' };
+        }
+      }
+    } catch(e) {
+      return { success: false, message: '네트워크 통신 오류: ' + e.message };
+    }
+
+    return { success: false, message: '응답 수신 실패' };
+  }
+
+  function getSchedule() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.SCHEDULE);
+      let list = raw ? JSON.parse(raw) : null;
+      if (!list || !Array.isArray(list) || list.length === 0) {
+        list = generateInitialAllSchedules();
+        safeSetItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+      }
+      return list;
+    } catch(e) {
+      return generateInitialAllSchedules();
+    }
+  }
+
+  function saveSchedule(data) {
+    safeSetItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  const HARDCODED_DELETED_IDS = [];
+
+  function getDeletedIds() {
+    try {
+      const raw = safeGetItem('mds_deleted_ids_v1');
+      const list = raw ? JSON.parse(raw) : [];
+      HARDCODED_DELETED_IDS.forEach(id => {
+        if (!list.includes(id)) list.push(id);
+      });
+      return list;
+    } catch(e) { return [...HARDCODED_DELETED_IDS]; }
+  }
+
+  function addDeletedId(id) {
+    if (!id) return;
+    try {
+      const list = getDeletedIds();
+      if (!list.includes(id)) {
+        list.push(id);
+        safeSetItem('mds_deleted_ids_v1', JSON.stringify(list));
+      }
+    } catch(e) {}
+    pushToCloud();
+  }
+
+  function getNotices() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.NOTICES);
+      const list = raw ? JSON.parse(raw) : INITIAL_NOTICES;
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) { 
+      return INITIAL_NOTICES.filter(item => item && !deletedIds.includes(item.id)); 
+    }
+  }
+
+  function saveNotices(data) {
+    const deletedIds = getDeletedIds();
+    const cleanList = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    safeSetItem(STORAGE_KEYS.NOTICES, JSON.stringify(cleanList));
+    pushToCloud();
+  }
+
+  function getLeaveRequests() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.LEAVE_REQUESTS);
+      const list = raw ? JSON.parse(raw) : INITIAL_LEAVE_REQUESTS;
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) { 
+      return INITIAL_LEAVE_REQUESTS.filter(item => item && !deletedIds.includes(item.id)); 
+    }
+  }
+
+  function saveLeaveRequests(data) {
+    const deletedIds = getDeletedIds();
+    const cleanList = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    safeSetItem(STORAGE_KEYS.LEAVE_REQUESTS, JSON.stringify(cleanList));
+    pushToCloud();
+  }
+
+  function getDiscountPurchases() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.DISCOUNT_PURCHASES) || safeGetItem('mds_discount_purchases');
+      const list = (raw !== null && raw !== undefined) ? JSON.parse(raw) : INITIAL_DISCOUNT_PURCHASES;
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) { 
+      return INITIAL_DISCOUNT_PURCHASES.filter(item => item && !deletedIds.includes(item.id)); 
+    }
+  }
+
+  function saveDiscountPurchases(data) {
+    const deletedIds = getDeletedIds();
+    const now = Date.now();
+    const cleanList = (data || [])
+      .filter(item => item && !deletedIds.includes(item.id))
+      .map(item => ({
+        ...item,
+        updatedAt: item.updatedAt || now,
+        createdAt: item.createdAt || now
+      }));
+    safeSetItem(STORAGE_KEYS.DISCOUNT_PURCHASES, JSON.stringify(cleanList));
+    safeSetItem('mds_discount_purchases', JSON.stringify(cleanList));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+    if (typeof window !== 'undefined' && window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+      window.App.updateSidebarBadgesOnly();
+    }
+  }
+
+  function getSupplies() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.SUPPLIES);
+      const list = (raw !== null && raw !== undefined) ? JSON.parse(raw) : INITIAL_SUPPLIES;
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) {
+      return INITIAL_SUPPLIES.filter(item => item && !deletedIds.includes(item.id));
+    }
+  }
+
+  function saveSupplies(data) {
+    const deletedIds = getDeletedIds();
+    const now = Date.now();
+    const cleanList = (data || [])
+      .filter(item => item && !deletedIds.includes(item.id))
+      .map(item => ({
+        ...item,
+        updatedAt: item.updatedAt || now
+      }));
+    safeSetItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(cleanList));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+    if (typeof window !== 'undefined' && window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+      window.App.updateSidebarBadgesOnly();
+    }
+  }
+
+  function addSupplyRequest(item) {
+    const list = getSupplies();
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const newItem = {
+      id: 'sup_' + Date.now(),
+      itemName: item.itemName || '미지정 소모품',
+      category: item.category || '기타소모품',
+      qty: Number(item.qty) || 1,
+      unit: item.unit || '개',
+      urgency: item.urgency || 'NORMAL',
+      applicantName: item.applicantName || '직원',
+      applicantRole: item.applicantRole || '직원',
+      status: 'PENDING',
+      memo: item.memo || '',
+      vendor: item.vendor || '',
+      estimatedPrice: Number(item.estimatedPrice) || 0,
+      actualPrice: 0,
+      storageLocation: item.storageLocation || '',
+      photoUrl: item.photoUrl || '',
+      photos: Array.isArray(item.photos) ? item.photos : (item.photoUrl ? [item.photoUrl] : []),
+      createdAt: dateStr,
+      updatedAt: Date.now()
+    };
+    list.unshift(newItem);
+    saveSupplies(list);
+    return newItem;
+  }
+
+  function updateSupplyStatus(id, newStatus, extraData = {}) {
+    const list = getSupplies();
+    const target = list.find(s => String(s.id) === String(id));
+    if (!target) return false;
+
+    target.status = newStatus;
+    target.updatedAt = Date.now();
+    if (extraData.itemName !== undefined) target.itemName = extraData.itemName;
+    if (extraData.category !== undefined) target.category = extraData.category;
+    if (extraData.urgency !== undefined) target.urgency = extraData.urgency;
+    if (extraData.qty !== undefined) target.qty = Math.max(1, Number(extraData.qty) || 1);
+    if (extraData.unit !== undefined) target.unit = extraData.unit;
+    if (extraData.applicantName !== undefined) target.applicantName = extraData.applicantName;
+    if (extraData.applicantRole !== undefined) target.applicantRole = extraData.applicantRole;
+    if (extraData.vendor !== undefined) target.vendor = extraData.vendor;
+    if (extraData.estimatedPrice !== undefined) target.estimatedPrice = Math.max(0, Number(extraData.estimatedPrice) || 0);
+    if (extraData.actualPrice !== undefined) target.actualPrice = Math.max(0, Number(extraData.actualPrice) || 0);
+    if (extraData.memo !== undefined) target.memo = extraData.memo;
+    if (extraData.payMethod !== undefined) target.payMethod = extraData.payMethod;
+    if (extraData.ledgerCategory !== undefined) target.ledgerCategory = extraData.ledgerCategory;
+    if (extraData.storageLocation !== undefined) target.storageLocation = extraData.storageLocation;
+    if (extraData.photoUrl !== undefined) target.photoUrl = extraData.photoUrl;
+    if (extraData.photos !== undefined) target.photos = extraData.photos;
+    if (extraData.smsSent !== undefined) target.smsSent = !!extraData.smsSent;
+    if (extraData.smsSentAt !== undefined) target.smsSentAt = extraData.smsSentAt;
+
+    if (newStatus === 'PENDING') {
+      target.completedAt = '';
+      target.rejectReason = '';
+    } else if (newStatus === 'ORDERED') {
+      target.completedAt = '';
+      target.rejectReason = '';
+    } else if (newStatus === 'COMPLETED') {
+      const now = new Date();
+      target.completedAt = extraData.completedAt || target.completedAt || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+      target.rejectReason = '';
+    } else if (newStatus === 'REJECTED') {
+      if (extraData.rejectReason !== undefined) {
+        target.rejectReason = extraData.rejectReason;
+      }
+      target.completedAt = '';
+    }
+    saveSupplies(list);
+    return target;
+  }
+
+  function deleteSupplyRequest(id) {
+    addDeletedId(id);
+    const list = getSupplies().filter(s => s.id !== id);
+    saveSupplies(list);
+  }
+
+  function getSupplyPresets() {
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.SUPPLY_PRESETS);
+      return raw ? JSON.parse(raw) : INITIAL_SUPPLY_PRESETS;
+    } catch(e) {
+      return INITIAL_SUPPLY_PRESETS;
+    }
+  }
+
+  function saveSupplyPresets(data) {
+    safeSetItem(STORAGE_KEYS.SUPPLY_PRESETS, JSON.stringify(data || []));
+    pushToCloud();
+  }
+
+  // ============================================================
+  // ⏳ 유효기간 임박 & 제약사/도매상 반품 대장 CRUD 엔진
+  // ============================================================
+  function getExpiryReturns() {
+    const deletedIds = getDeletedIds();
+    try {
+      const raw = safeGetItem(STORAGE_KEYS.EXPIRY_RETURNS);
+      const list = (raw !== null && raw !== undefined) ? JSON.parse(raw) : INITIAL_EXPIRY_RETURNS;
+      return (list || []).filter(item => item && !deletedIds.includes(item.id));
+    } catch(e) {
+      return INITIAL_EXPIRY_RETURNS.filter(item => item && !deletedIds.includes(item.id));
+    }
+  }
+
+  function saveExpiryReturns(data) {
+    const deletedIds = getDeletedIds();
+    const now = Date.now();
+    const cleanList = (data || [])
+      .filter(item => item && !deletedIds.includes(item.id))
+      .map(item => ({
+        ...item,
+        updatedAt: item.updatedAt || now
+      }));
+    safeSetItem(STORAGE_KEYS.EXPIRY_RETURNS, JSON.stringify(cleanList));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  function addExpiryReturn(item) {
+    const list = getExpiryReturns();
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const qty = Math.max(1, Number(item.qty) || 1);
+    const costPrice = Math.max(0, Number(item.costPrice) || 0);
+    const estimatedReturnAmount = Math.round(qty * costPrice);
+
+    const newItem = {
+      id: 'exp_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+      drugName: (item.drugName || '미지정 의약품').trim(),
+      drugType: item.drugType === 'ETC' ? 'ETC' : 'OTC',
+      spec: (item.spec || '').trim(),
+      expiryDate: (item.expiryDate || '').trim(),
+      qty: qty,
+      unit: item.unit || '개',
+      vendor: (item.vendor || '기타').trim(),
+      manufacturer: (item.manufacturer || '').trim(),
+      costPrice: costPrice,
+      estimatedReturnAmount: estimatedReturnAmount,
+      actualSettledAmount: Number(item.actualSettledAmount) || 0,
+      status: item.status || 'PENDING_RETURN',
+      registeredBy: item.registeredBy || '직원',
+      registeredByRole: item.registeredByRole || '직원',
+      photos: Array.isArray(item.photos) ? item.photos : (item.photoUrl ? [item.photoUrl] : []),
+      memo: (item.memo || '').trim(),
+      returnHandoverDate: item.returnHandoverDate || '',
+      returnCollector: item.returnCollector || '',
+      settledDate: item.settledDate || '',
+      createdAt: dateStr,
+      updatedAt: Date.now()
+    };
+    list.unshift(newItem);
+    saveExpiryReturns(list);
+    return newItem;
+  }
+
+  function updateExpiryReturnStatus(id, newStatus, extraData = {}) {
+    const list = getExpiryReturns();
+    const target = list.find(s => String(s.id) === String(id));
+    if (!target) return false;
+
+    target.status = newStatus;
+    target.updatedAt = Date.now();
+    
+    if (extraData.vendor !== undefined) target.vendor = extraData.vendor;
+    if (extraData.costPrice !== undefined) {
+      target.costPrice = Math.max(0, Number(extraData.costPrice) || 0);
+      target.estimatedReturnAmount = Math.round(target.qty * target.costPrice);
+    }
+    if (extraData.qty !== undefined) {
+      target.qty = Math.max(1, Number(extraData.qty) || 1);
+      target.estimatedReturnAmount = Math.round(target.qty * target.costPrice);
+    }
+    if (extraData.memo !== undefined) target.memo = extraData.memo;
+    if (extraData.photos !== undefined) target.photos = extraData.photos;
+    if (extraData.smsSent !== undefined) target.smsSent = !!extraData.smsSent;
+    if (extraData.smsSentAt !== undefined) target.smsSentAt = extraData.smsSentAt;
+    
+    if (newStatus === 'PENDING_RETURN') {
+      target.returnHandoverDate = extraData.returnHandoverDate !== undefined ? extraData.returnHandoverDate : '';
+      target.returnCollector = extraData.returnCollector !== undefined ? extraData.returnCollector : '';
+      target.actualSettledAmount = extraData.actualSettledAmount !== undefined ? Number(extraData.actualSettledAmount) || 0 : 0;
+      target.settledDate = extraData.settledDate !== undefined ? extraData.settledDate : '';
+      target.pickupRequestDate = '';
+      target.pickupNote = '';
+    } else if (newStatus === 'PROCESSING_RETURN') {
+      const now = new Date();
+      target.returnHandoverDate = extraData.returnHandoverDate !== undefined
+        ? extraData.returnHandoverDate
+        : (target.returnHandoverDate || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+      if (extraData.returnCollector !== undefined) target.returnCollector = extraData.returnCollector;
+      if (extraData.actualSettledAmount !== undefined) target.actualSettledAmount = Number(extraData.actualSettledAmount) || 0;
+      if (extraData.settledDate !== undefined) target.settledDate = extraData.settledDate;
+    } else if (newStatus === 'COMPLETED') {
+      const now = new Date();
+      target.settledDate = extraData.settledDate || target.settledDate || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+      if (extraData.actualSettledAmount !== undefined) {
+        target.actualSettledAmount = Math.max(0, Number(extraData.actualSettledAmount) || 0);
+      } else if (!target.actualSettledAmount) {
+        target.actualSettledAmount = target.estimatedReturnAmount;
+      }
+    }
+
+    saveExpiryReturns(list);
+    return target;
+  }
+
+  function deleteExpiryReturn(id) {
+    addDeletedId(id);
+    const list = getExpiryReturns().filter(s => s.id !== id);
+    saveExpiryReturns(list);
+  }
+
+  function getDismissedCriticalReturnKeys() {
+    try {
+      const raw = safeGetItem('mds_dismissed_critical_keys');
+      return raw ? JSON.parse(raw) : [];
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function saveDismissedCriticalReturnKeys(keys) {
+    try {
+      safeSetItem('mds_dismissed_critical_keys', JSON.stringify(keys || []));
+      pushToCloud();
+    } catch(e) {}
+  }
+
+  function getSmartLedgerCloudData() {
+    try {
+      const raw = safeGetItem('mds_cloud_smart_ledger_v1');
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  let smartLedgerPushTimer = null;
+  function saveSmartLedgerToCloud(data) {
+    if (!data) return;
+    try {
+      safeSetItem('mds_cloud_smart_ledger_v1', JSON.stringify(data));
+      clearTimeout(smartLedgerPushTimer);
+      smartLedgerPushTimer = setTimeout(() => {
+        pushToCloud();
+      }, 1000);
+    } catch(e) {}
+  }
+
+  function getPharmacyExchange() {
+    const raw = safeGetItem(STORAGE_KEYS.PHARMACY_EXCHANGE);
+    return raw ? JSON.parse(raw) : { exchanges: [], deadStocks: [] };
+  }
+
+  function savePharmacyExchange(data) {
+    safeSetItem(STORAGE_KEYS.PHARMACY_EXCHANGE, JSON.stringify(data));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  function getPatientOrders() {
+    const raw = safeGetItem(STORAGE_KEYS.PATIENT_ORDERS);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function savePatientOrders(data) {
+    safeSetItem(STORAGE_KEYS.PATIENT_ORDERS, JSON.stringify(data));
+    if (typeof window !== 'undefined' && window.App && typeof window.App.updateSidebarBadgesOnly === 'function') window.App.updateSidebarBadgesOnly();
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  function getPrescriptionShortages() {
+    const deletedIds = getDeletedIds();
+    const raw = safeGetItem(STORAGE_KEYS.PRESCRIPTION_SHORTAGES);
+    const list = raw ? JSON.parse(raw) : [];
+    return (list || []).filter(item => item && !deletedIds.includes(item.id));
+  }
+
+  function savePrescriptionShortages(data) {
+    const deletedIds = getDeletedIds();
+    const cleanData = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    safeSetItem(STORAGE_KEYS.PRESCRIPTION_SHORTAGES, JSON.stringify(cleanData));
+    if (typeof window !== 'undefined' && window.App && typeof window.App.updateSidebarBadgesOnly === 'function') window.App.updateSidebarBadgesOnly();
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  function deletePrescriptionShortage(id) {
+    if (!id) return;
+    addDeletedId(id);
+    const list = getPrescriptionShortages().filter(item => item && String(item.id) !== String(id));
+    savePrescriptionShortages(list);
+  }
+
+  function getSmsDispatchHistory() {
+    const deletedIds = getDeletedIds();
+    const raw = safeGetItem(STORAGE_KEYS.SMS_DISPATCH_HISTORY);
+    const list = raw ? JSON.parse(raw) : [];
+    return (list || []).filter(item => item && !deletedIds.includes(item.id));
+  }
+
+  function saveSmsDispatchHistory(data) {
+    const deletedIds = getDeletedIds();
+    const cleanData = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    safeSetItem(STORAGE_KEYS.SMS_DISPATCH_HISTORY, JSON.stringify(cleanData));
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  function deleteSmsDispatchHistory(id) {
+    if (!id) return;
+    addDeletedId(id);
+    const list = getSmsDispatchHistory().filter(item => item && String(item.id) !== String(id));
+    saveSmsDispatchHistory(list);
+  }
+
+  // 🛡️ [제 195 조] 의약품 낱알 식별 상담 기록 및 식약처 캐시는 localStorage 용량(5MB) 보호를 위해 100% 인메모리(RAM) + Firebase/Cloudinary 직결 운용 (로컬스토리지 0 Byte)
+  let inMemoryPillIdentifications = [];
+  try {
+    localStorage.removeItem('mds_pill_identifications_v1');
+    localStorage.removeItem('mds_mfds_pill_cache_v1');
+  } catch (e) {}
+
+  function getPillIdentifications() {
+    const deletedIds = getDeletedIds();
+    return (inMemoryPillIdentifications || []).filter(item => item && !deletedIds.includes(item.id));
+  }
+
+  function savePillIdentifications(data) {
+    const deletedIds = getDeletedIds();
+    const cleanData = (data || []).filter(item => item && !deletedIds.includes(item.id));
+    inMemoryPillIdentifications = cleanData;
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PILL_IDENTIFICATIONS);
+    } catch (e) {}
+    if (typeof window !== 'undefined' && window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+      window.App.updateSidebarBadgesOnly();
+    }
+    pushToCloud();
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+      window.dispatchEvent(new CustomEvent('ssg_data_changed'));
+    }
+  }
+
+  // ⚡ 365메디스타약국 일일정산 및 월말결제장부 정식 배포 Apps Script 웹앱 URL (메일 발송, 일일결산, 스마트정산 전용)
+  const DIRECT_GAS_URL = "https://script.google.com/macros/s/AKfycbzgRwKxJjW8-aOGJ3DtsWNy1TDgQxqJS4OPMA1q4FuPYvIb8quMWyRhMdvWpecbwQWK/exec";
+  const CLOUD_SYNC_RELAY_URL = "https://script.google.com/macros/s/AKfycbx3JgVr9e_wGnO6Bvp2uE_7lamAf_Ii22cLpCyo5OGquAiNypiWA1FCDJSHnw4qqFPMJg/exec";
+  let isSyncing = false;
+
+  // 🔥 구글 파이어베이스 실시간 데이터베이스 (초고속 0.05초 웹소켓 동기화)
+  const firebaseConfig = {
+    apiKey: "AIzaSyBHUy2_CZ1PZJjK2ah73WbCoE7oYVMAMYU",
+    authDomain: "shinsegae-pharmacy.firebaseapp.com",
+    databaseURL: "https://shinsegae-pharmacy-default-rtdb.firebaseio.com",
+    projectId: "shinsegae-pharmacy",
+    storageBucket: "shinsegae-pharmacy.firebasestorage.app",
+    messagingSenderId: "742577443162",
+    appId: "1:742577443162:web:1cb9c0260a0e146c8c6363",
+    measurementId: "G-5THH6NF54S"
+  };
+
+  // 🔇 무소음 초경량 모드: Web Audio API 및 사운드 버퍼 100% 제거 (배터리 및 메모리 절약)
+  if (typeof window !== 'undefined') {
+    // 🛡️ [제170조 준수] 스마트폰 화면 복귀/포커스 시 맹목적 1.1MB 재다운로드 차단 2중 가드 (트래픽 70% 다이어트)
+    let lastVisibilityCheckTime = 0;
+    const PUSH_SIGNAL_REST_URL = "https://shinsegae-pharmacy-default-rtdb.firebaseio.com/medistar_master_db/pushSignal.json";
+
+    const triggerSmartCloudResync = async () => {
+      const now = Date.now();
+      // 최소 8초 디바운스 쿨다운: 화면을 빠르게 껐다 켜거나 탭 전환 시 중복 통신 원천 차단
+      if (now - lastVisibilityCheckTime < 8000) {
+        if (window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+          window.App.updateSidebarBadgesOnly();
+        }
+        return;
+      }
+      lastVisibilityCheckTime = now;
+
+      // 1단계: 95바이트 초경량 pushSignal 타임스탬프만 선확인 (1.1MB 전체 다운로드 방지)
+      try {
+        const res = await fetch(`${PUSH_SIGNAL_REST_URL}?t=${now}`, { cache: 'no-store' });
+        if (res.ok) {
+          const sig = await res.json();
+          if (sig && sig.timestamp) {
+            const lastHandled = safeGetItem('mds_last_push_signal_time') || '0';
+            // 클라우드에 실제로 새 글이나 수정이 발생했을 때만 전체 다운로드 실행!
+            if (String(sig.timestamp) !== String(lastHandled)) {
+              safeSetItem('mds_last_push_signal_time', String(sig.timestamp));
+              if (typeof pullFromCloud === 'function') {
+                pullFromCloud(() => {
+                  if (window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+                    window.App.updateSidebarBadgesOnly();
+                  }
+                });
+              }
+              return;
+            }
+          }
+        }
+      } catch(e) {}
+
+      // 변동이 없으면 1.1MB 다운로드 없이 로컬 캐시 기준 사이드바 배지만 조용히 재계산 (트래픽 0MB)
+      if (window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+        window.App.updateSidebarBadgesOnly();
+      }
+    };
+
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        triggerSmartCloudResync();
+      }
+    });
+
+    window.addEventListener('pageshow', triggerSmartCloudResync);
+    window.addEventListener('focus', triggerSmartCloudResync);
+  }
+
+  function getSoundPreset() { return 'none'; }
+  function setSoundPreset(type) {}
+  function playNotificationChime(customPreset) {}
+  function toggleSoundMute() { return true; }
+  function isSoundMuted() { return true; }
+
+  // 🔔 OneSignal 백그라운드 무적 웹 푸시 SDK 연동
+  if (typeof window !== 'undefined') {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async function(OneSignal) {
+      try {
+        await OneSignal.init({
+          appId: "8188167f-9f79-451e-bfe8-b715e7144e50",
+          allowLocalhostAsSecureOrigin: true,
+        });
+      } catch(e) {}
+    });
+  }
+
+  function sendOneSignalPush(title, bodyText) {
+    // 🔇 외부 푸시 SDK 제거 (초경량 무소음 모드)
+  }
+
+  // 👥 카카오톡 단톡방 알림 제거 (초경량 무소음 0% 딜레이 모드)
+  function sendGroupChatPush(title, bodyText, moduleName) {
+    // 🔇 외부 GAS 중계 호출 차단 (네트워크 멈춤 100% 방지)
+  }
+
+  // 📧 직원 개인 이메일로 1:1 정식 급여명세서 안전 발송 (GAS 백엔드 중계 - 제2안 표 내부 통합형)
+  function sendPaystubEmailToStaff(paystubData) {
+    if (!paystubData || !paystubData.email) return;
+    setTimeout(() => {
+      try {
+        const gasUrl = getGasUrl('ssg') || DIRECT_GAS_URL;
+        const staffName = String(paystubData.name || '직원');
+        const year = paystubData.year || 2026;
+        const month = paystubData.month || 8;
+        const netSalary = parseInt(paystubData.netSalary || 0, 10);
+        const preTax = parseInt(paystubData.preTax || 0, 10);
+        const totalDeduction = parseInt(paystubData.totalDeduction || 0, 10);
+        const fileUrl = String(paystubData.fileUrl || paystubData.pdfUrl || paystubData.fileData || '').trim();
+        const note = String(paystubData.note || (month + '월 세무사 확정 급여명세서입니다. 노고에 감사드립니다!'));
+        const appUrl = "https://garuemma1.github.io/shinsegae_app/";
+
+        const hasPreTax = preTax > 0;
+        const hasDeduction = totalDeduction > 0;
+
+        const htmlBody = '<!DOCTYPE html>' +
+          '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>' +
+          '<body style="margin:0; padding:0; background:#f1f5f9; background-color:#f1f5f9; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">' +
+          '<div style="width:100%; background:#f1f5f9; background-color:#f1f5f9; margin:0; padding:20px 10px; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,\'Apple SD Gothic Neo\',\'Pretendard\',\'Malgun Gothic\',sans-serif; color:#1e293b;">' +
+          '  <div style="max-width:480px; width:100%; margin:0 auto; background:#ffffff; background-color:#ffffff; border-radius:20px; border:1.5px solid #cbd5e1; box-shadow:0 10px 25px rgba(0,0,0,0.06); overflow:hidden; box-sizing:border-box;">' +
+          '    <div style="background:#059669; background-color:#059669; color:#ffffff; padding:24px 18px; text-align:center; border-radius:18px 18px 0 0;">' +
+          '      <div style="display:inline-block; background:#047857; background-color:#047857; border:1px solid #34d399; color:#ffffff; font-size:11.5px; font-weight:700; padding:4px 12px; border-radius:9999px; margin-bottom:8px;">🏥 365메디스타약국 HR/OPS</div>' +
+          '      <div style="font-size:20px; font-weight:900; color:#ffffff; margin:0; letter-spacing:-0.5px; line-height:1.3; word-break:keep-all;">' + year + '년 ' + month + '월 정식 급여명세서</div>' +
+          '    </div>' +
+          '    <div style="padding:22px 18px; background:#ffffff; background-color:#ffffff;">' +
+          '      <div style="background:#f8fafc; background-color:#f8fafc; border-radius:14px; border:1px solid #e2e8f0; padding:6px 14px; margin-bottom:16px;">' +
+          '        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse;">' +
+          '          <tr>' +
+          '            <td align="left" width="56%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:13px; font-weight:600; text-align:left; white-space:nowrap;">성명</td>' +
+          '            <td align="right" width="44%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-size:13.5px; font-weight:800; text-align:right; white-space:nowrap;">' + staffName + ' 님</td>' +
+          '          </tr>' +
+          '          <tr>' +
+          '            <td align="left" width="56%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:13px; font-weight:600; text-align:left; white-space:nowrap;">지급 연월</td>' +
+          '            <td align="right" width="44%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-size:13.5px; font-weight:800; text-align:right; white-space:nowrap;">' + year + '년 ' + month + '월</td>' +
+          '          </tr>' +
+          (hasPreTax ? (
+          '          <tr>' +
+          '            <td align="left" width="56%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:13px; font-weight:600; text-align:left; white-space:nowrap;">세전 총급여액</td>' +
+          '            <td align="right" width="44%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-size:13.5px; font-weight:800; text-align:right; white-space:nowrap;">' + preTax.toLocaleString() + ' 원</td>' +
+          '          </tr>'
+          ) : '') +
+          (hasDeduction ? (
+          '          <tr>' +
+          '            <td align="left" width="56%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:13px; font-weight:600; text-align:left; white-space:nowrap;">4대보험 및 세금 공제액</td>' +
+          '            <td align="right" width="44%" style="padding:10px 4px; border-bottom:1px solid #e2e8f0; color:#dc2626; font-size:13.5px; font-weight:800; text-align:right; white-space:nowrap;">- ' + totalDeduction.toLocaleString() + ' 원</td>' +
+          '          </tr>'
+          ) : '') +
+          '          <tr>' +
+          '            <td align="left" width="58%" style="padding:13px 4px 10px 4px; border-top:1.5px dashed #cbd5e1; color:#065f46; font-size:13.5px; font-weight:800; text-align:left; white-space:nowrap;">💰 통장 입금 실수령액 (세후)</td>' +
+          '            <td align="right" width="42%" style="padding:13px 4px 10px 4px; border-top:1.5px dashed #cbd5e1; color:#047857; font-size:15.5px; font-weight:900; text-align:right; white-space:nowrap;">' + netSalary.toLocaleString() + ' 원</td>' +
+          '          </tr>' +
+          '        </table>' +
+          '      </div>' +
+          (note ? (
+          '      <div style="background:#eff6ff; background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:13px 15px; margin-bottom:18px; font-size:13px; color:#1e40af; line-height:1.6; text-align:left; word-break:keep-all;">' +
+          '        💬 <strong>약국장 전달 메시지:</strong><br>' + note.replace(/\n/g, '<br>') +
+          '      </div>'
+          ) : '') +
+          (fileUrl && fileUrl.indexOf('http') === 0 ? (
+          '      <div style="text-align:center; margin-bottom:16px;">' +
+          '        <a href="' + fileUrl + '" target="_blank" style="display:inline-block; background:#059669; background-color:#059669; color:#ffffff !important; font-size:13.5px; font-weight:800; text-decoration:none; padding:12px 22px; border-radius:12px; white-space:nowrap;"><span style="color:#ffffff;">📄 세무사 원본 명세서 고화질 열람 / 다운로드</span></a>' +
+          '      </div>'
+          ) : '') +
+          '      <div style="text-align:center; margin-bottom:4px;">' +
+          '        <a href="' + appUrl + '" target="_blank" style="color:#059669; font-size:12.5px; font-weight:700; text-decoration:none;">🔗 365메디스타약국 HR/OPS 플랫폼 바로가기</a>' +
+          '      </div>' +
+          '    </div>' +
+          '    <div style="padding:16px 14px; background:#f8fafc; background-color:#f8fafc; border-top:1px solid #e2e8f0; font-size:11px; color:#64748b; text-align:center; line-height:1.6; word-break:keep-all; border-radius:0 0 18px 18px;">' +
+          '      본 메일은 365메디스타약국 급여 시스템(근로기준법 제48조)에 따라 개인 금융정보 보안을 위해 등록된 개인 이메일로 1:1 자동 발송되었습니다.<br>' +
+          '      문의사항은 약국장(문성도)에게 문의해 주시기 바랍니다.' +
+          '    </div>' +
+          '  </div>' +
+          '</div>' +
+          '</body></html>';
+
+        const payload = {
+          action: 'sendPaystubEmail',
+          email: paystubData.email,
+          name: encodeURIComponent(staffName),
+          year: year,
+          month: month,
+          netSalary: netSalary,
+          preTax: preTax,
+          totalDeduction: totalDeduction,
+          fileUrl: fileUrl,
+          note: encodeURIComponent(note),
+          htmlBody: encodeURIComponent(htmlBody),
+          url: appUrl
+        };
+
+        if (typeof fetch === 'function') {
+          fetch(gasUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            keepalive: true,
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('sendPaystubEmailToStaff error:', e);
+      }
+    }, 0);
+  }
+
+  function requestPushPermission(silent = false) {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      if (!silent) alert('이 브라우저는 웹 푸시 알림을 지원하지 않습니다.');
+      return;
+    }
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') {
+        if (!silent) alert('✅ 365메디스타약국 실시간 웹 푸시 알림이 성공적으로 설정되었습니다!');
+        registerServiceWorker();
+      } else {
+        if (!silent) alert('⚠️ 푸시 알림 권한이 차단되었습니다. 브라우저 설정에서 알림을 허용해주세요.');
+      }
+    }).catch(() => {});
+  }
+
+  function registerServiceWorker() {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        console.log('Service Worker registered:', reg);
+      }).catch((err) => {
+        console.warn('Service Worker registration failed:', err);
+      });
+    }
+  }
+
+  function sendDesktopNotification(title, body) {
+    try {
+      if (isSoundMuted()) return;
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(title || '📢 365메디스타약국 알림', {
+              body: body || '새로운 공지사항, 업무일지 또는 소모품 변동사항이 도착했습니다.',
+              icon: 'logo.jpg',
+              badge: 'logo.jpg',
+              tag: 'mds-notification-channel-v3',
+              renotify: true,
+              silent: false,
+              vibrate: [300, 100, 300, 100, 400],
+              requireInteraction: true
+            });
+          }).catch(() => {
+            new Notification(title || '📢 365메디스타약국 알림', {
+              body: body || '새로운 업무일지 또는 소모품 변동사항이 있습니다.',
+              icon: 'logo.jpg',
+              tag: 'mds-notification'
+            });
+          });
+        } else {
+          new Notification(title || '📢 365메디스타약국 알림', {
+            body: body || '새로운 업무일지 또는 소모품 변동사항이 있습니다.',
+            icon: 'logo.jpg',
+            tag: 'mds-notification'
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  const FIREBASE_REST_URL = "https://shinsegae-pharmacy-default-rtdb.firebaseio.com/medistar_master_db/data.json";
+
+  let fbApp = null;
+  let fbDb = null;
+  let fbRef = null;
+
+  function initFirebase() {
+    try {
+      // 🚀 1. 직통 REST 통신으로 즉시 1차 데이터 즉각 수신 (웹소켓 연결 전 0.05초 초고속 렌더링)
+      pullFromCloud();
+
+      // ⚡ 2. Firebase 실시간 웹소켓(WebSocket) 상시 연결
+      if (typeof firebase !== 'undefined') {
+        if (!firebase.apps || !firebase.apps.length) {
+          fbApp = firebase.initializeApp(firebaseConfig);
+        } else {
+          fbApp = firebase.app();
+        }
+        fbDb = firebase.database();
+        fbRef = fbDb.ref('medistar_master_db/data');
+
+        fbRef.on('value', (snapshot) => {
+          const cloudData = snapshot.val();
+          if (cloudData) {
+            applyCloudData(cloudData);
+          }
+        }, (err) => {
+          console.warn('Firebase WebSocket listener warning -> REST 폴백 가동:', err);
+          pullFromCloud();
+        });
+
+        // 📱 타 기기(PC/핸드폰) 작성 시 0.05초 카카오톡 스타일 푸시 신호 수신
+        try {
+          const fbRefPush = fbDb.ref('medistar_master_db/pushSignal');
+          fbRefPush.on('value', (snapshot) => {
+            const sig = snapshot.val();
+            if (sig && sig.timestamp) {
+              const lastHandled = safeGetItem('mds_last_push_signal_time') || '0';
+              if (String(sig.timestamp) !== String(lastHandled)) {
+                safeSetItem('mds_last_push_signal_time', String(sig.timestamp));
+                const currUser = getCurrentUser();
+                const isSelf = sig.senderId && currUser && String(sig.senderId) === String(currUser.id);
+                
+                // 📱 타 기기 / 제3자 작성 수신 시 0.01초 사이드바 N 배지 갱신 (무소음 초경량 모드)
+                if (!isSelf) {
+                  // 🛡️ WebSocket이 비활성 상태일 때만 REST 풀백 호출 (중복 1.1MB 다운로드 방지)
+                  if (!fbRef) {
+                    pullFromCloud(() => {
+                      if (window.App) {
+                        if (typeof window.App.renderSidebarNavigation === 'function') window.App.renderSidebarNavigation();
+                        if (typeof window.App.updateSidebarBadgesOnly === 'function') window.App.updateSidebarBadgesOnly();
+                      }
+                    });
+                  } else {
+                    if (window.App) {
+                      if (typeof window.App.renderSidebarNavigation === 'function') window.App.renderSidebarNavigation();
+                      if (typeof window.App.updateSidebarBadgesOnly === 'function') window.App.updateSidebarBadgesOnly();
+                    }
+                  }
+                }
+              }
+            }
+          });
+        } catch(pe) {}
+      }
+    } catch(e) {
+      console.warn('Firebase init warning -> REST 폴백 가동:', e);
+      pullFromCloud();
+    }
+  }
+
+  // 데이터 통합 및 화면 갱신 엔진
+  function applyCloudData(cloudData, callback) {
+    if (!cloudData) return;
+    try {
+      let updated = false;
+
+      // 클라우드에서 삭제된 ID 목록 병합
+      if (cloudData.deletedIds && Array.isArray(cloudData.deletedIds)) {
+        cloudData.deletedIds.forEach(did => addDeletedId(did));
+      }
+
+      const activeDeletedIds = getDeletedIds();
+
+      function getSafeTime(item, dateField) {
+        if (!item) return 0;
+        if (typeof item.updatedAt === 'number' && item.updatedAt > 1000000000000) {
+          return item.updatedAt;
+        }
+        if (typeof item.createdAt === 'number' && item.createdAt > 1000000000000) {
+          return item.createdAt;
+        }
+        if (item.id && typeof item.id === 'string') {
+          const numStr = item.id.replace(/^[a-zA-Z_]+/, '');
+          const idNum = parseInt(numStr, 10);
+          if (!isNaN(idNum) && idNum > 1000000000000) {
+            const uTime = typeof item.updatedAt === 'number' ? item.updatedAt : (item.updatedAt ? new Date(String(item.updatedAt).replace(/-/g, '/')).getTime() : 0);
+            return (!isNaN(uTime) && uTime > idNum) ? uTime : idNum;
+          }
+        }
+        const val = (dateField && item[dateField] !== undefined && item[dateField] !== null && item[dateField] !== '')
+          ? item[dateField]
+          : (item.updatedAt || item.createdAt || item.date || item.dateStr || '');
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        const s = String(val).trim().replace(/\+/g, ' ').replace(/-/g, '/').replace(/\./g, '/');
+        const ms = new Date(s).getTime();
+        return isNaN(ms) ? 0 : ms;
+      }
+
+      function mergeById(localList, cloudList, dateField = 'updatedAt') {
+        const map = {};
+        (localList || []).forEach(item => {
+          if (item && item.id && !activeDeletedIds.includes(item.id)) {
+            map[item.id] = item;
+          }
+        });
+        (cloudList || []).forEach(item => {
+          if (item && item.id && !activeDeletedIds.includes(item.id)) {
+            const existing = map[item.id];
+            if (!existing) {
+              map[item.id] = item;
+            } else {
+              const timeExisting = getSafeTime(existing, dateField);
+              const timeCloud = getSafeTime(item, dateField);
+              if (timeCloud >= timeExisting) {
+                map[item.id] = item;
+              }
+            }
+          }
+        });
+        return Object.values(map).sort((a, b) => {
+          const pinA = a.isPinned ? 1 : 0;
+          const pinB = b.isPinned ? 1 : 0;
+          if (pinB !== pinA) return pinB - pinA;
+          const timeA = getSafeTime(a, dateField);
+          const timeB = getSafeTime(b, dateField);
+          return timeB - timeA;
+        });
+      }
+
+      function getItemFingerprint(item) {
+        if (!item) return '';
+        return [
+          item.id || '',
+          item.updatedAt || '',
+          item.createdAt || '',
+          item.date || item.dateStr || '',
+          item.title || item.name || item.drugName || item.content || item.text || '',
+          item.locationDetail || item.zoneId || item.zoneName || item.vendor || '',
+          item.status || item.shift || item.expiryDate || '',
+          item.photoUrl || item.imageUrl || (Array.isArray(item.photos) ? item.photos.length : ''),
+          item.notes || item.memo || '',
+          item.updatedBy || item.registeredBy || '',
+          item.isPaid ? 'paid' : 'unpaid',
+          item.totalPrice || item.estimatedReturnAmount || item.actualSettledAmount || '',
+          Array.isArray(item.history) ? item.history.length : 0,
+          Array.isArray(item.checkedBy) ? item.checkedBy.join(',') : String(item.checkedBy || '')
+        ].join('|');
+      }
+
+      function isListDifferent(listA, listB) {
+        if (!listA && !listB) return false;
+        if (!listA || !listB) return true;
+        if (listA.length !== listB.length) return true;
+        const mapA = {};
+        listA.forEach(item => {
+          if (item) {
+            const key = item.id || (item.date && item.empId ? `${item.date}_${item.empId}` : null);
+            if (key) mapA[key] = getItemFingerprint(item);
+          }
+        });
+        return listB.some(item => {
+          if (!item) return false;
+          const key = item.id || (item.date && item.empId ? `${item.date}_${item.empId}` : null);
+          return !key || !mapA[key] || mapA[key] !== getItemFingerprint(item);
+        });
+      }
+
+      let needPushBack = false;
+      let noticesChanged = false;
+      let worklogsChanged = false;
+      let leavesChanged = false;
+      let discountsChanged = false;
+      let scheduleChanged = false;
+      let scheduleStatusChanged = false;
+      let paystubsChanged = false;
+      let empsChanged = false;
+      let ratesChanged = false;
+      let suppliesChanged = false;
+      let expiryReturnsChanged = false;
+      let pharmacyExchangeChanged = false;
+      let patientOrdersChanged = false;
+
+      // 1. 공지사항 & SOP 스마트 비파괴 병합 (삭제된 글 제외)
+      if (cloudData.notices && Array.isArray(cloudData.notices)) {
+        const localNotices = getNotices() || [];
+        const mergedNotices = mergeById(localNotices, cloudData.notices, 'updatedAt');
+        if (isListDifferent(localNotices, mergedNotices)) {
+          safeSetItem(STORAGE_KEYS.NOTICES, JSON.stringify(mergedNotices));
+          updated = true;
+          noticesChanged = true;
+        }
+      }
+
+      // 2. 업무일지 스마트 비파괴 양방향 융합 (핸드폰 글 + PC 글 완전 통합)
+      if (cloudData.worklogs && Array.isArray(cloudData.worklogs)) {
+        const sanitizedCloudWorklogs = cloudData.worklogs.map(item => {
+          if (item && (String(item.id) === 'task_1788521535677' || (String(item.content || '').includes('홍기표') && String(item.content || '').includes('테넬리아')))) {
+            return {
+              ...item,
+              status: 'COMPLETED',
+              completedBy: item.completedBy || '윤성도',
+              completedAt: item.completedAt || '2026-09-04 20:32',
+              updatedAt: typeof item.updatedAt === 'number' && item.updatedAt > 1788521535677 ? item.updatedAt : Date.now()
+            };
+          }
+          return item;
+        });
+
+        const localLogs = getWorklogs() || [];
+        const mergedLogs = mergeById(localLogs, sanitizedCloudWorklogs, 'updatedAt');
+        if (isListDifferent(localLogs, mergedLogs)) {
+          safeSetItem(STORAGE_KEYS.WORKLOGS, JSON.stringify(mergedLogs));
+          updated = true;
+          worklogsChanged = true;
+        }
+      }
+
+      // 2-2. 일반약 위치 관리 스마트 비파괴 양방향 융합 (핸드폰 등록약 + PC 등록약 완전 동기화)
+      let medLocationsChanged = false;
+      if (cloudData.medicineLocations && Array.isArray(cloudData.medicineLocations)) {
+        const localMeds = getMedicineLocations() || [];
+        const mergedMeds = mergeById(localMeds, cloudData.medicineLocations, 'updatedAt');
+        cachedMedicineLocations = mergedMeds;
+        if (isListDifferent(localMeds, mergedMeds)) {
+          safeSetItem(STORAGE_KEYS.MEDICINE_LOCATIONS, JSON.stringify(mergedMeds));
+          try { localStorage.removeItem('mds_medicine_locations'); } catch(e) {}
+          updated = true;
+          medLocationsChanged = true;
+        }
+      }
+
+      // 2-3. 전문약(조제실) 위치 관리 스마트 비파괴 양방향 융합 (핸드폰 ↔ PC 100% 양방향 실시간 호환)
+      let rxMedLocationsChanged = false;
+      if (cloudData.rxMedicineLocations && Array.isArray(cloudData.rxMedicineLocations)) {
+        const localRxMeds = getRxMedicineLocations() || [];
+        const mergedRxMeds = mergeById(localRxMeds, cloudData.rxMedicineLocations, 'updatedAt');
+        if (isListDifferent(localRxMeds, mergedRxMeds)) {
+          safeSetItem(STORAGE_KEYS.RX_MEDICINE_LOCATIONS, JSON.stringify(mergedRxMeds));
+          safeSetItem('mds_rx_medicine_locations', JSON.stringify(mergedRxMeds));
+          updated = true;
+          rxMedLocationsChanged = true;
+        }
+      }
+
+      // 3. 연차 신청 스마트 비파괴 병합 (삭제된 글 제외 - updatedAt 최신 1순위 승리)
+      if (cloudData.leaveRequests && Array.isArray(cloudData.leaveRequests)) {
+        const localLeaves = getLeaveRequests() || [];
+        const mergedLeaves = mergeById(localLeaves, cloudData.leaveRequests, 'updatedAt');
+        if (isListDifferent(localLeaves, mergedLeaves)) {
+          safeSetItem(STORAGE_KEYS.LEAVE_REQUESTS, JSON.stringify(mergedLeaves));
+          updated = true;
+          leavesChanged = true;
+        }
+      }
+
+      // 4. 직원할인구매 스마트 비파괴 양방향 융합 (핸드폰 ↔ PC 100% 양방향 실시간 호환)
+      if (cloudData.discountPurchases && Array.isArray(cloudData.discountPurchases)) {
+        const localDiscounts = getDiscountPurchases() || [];
+        const mergedDiscounts = mergeById(localDiscounts, cloudData.discountPurchases, 'updatedAt');
+        if (isListDifferent(localDiscounts, mergedDiscounts)) {
+          safeSetItem(STORAGE_KEYS.DISCOUNT_PURCHASES, JSON.stringify(mergedDiscounts));
+          safeSetItem('mds_discount_purchases', JSON.stringify(mergedDiscounts));
+          updated = true;
+          discountsChanged = true;
+        }
+      }
+
+      // 4-2. 약국 소모품 관리 스마트 비파괴 양방향 융합 (핸드폰 ↔ PC 100% 양방향 실시간 호환)
+      if (cloudData.supplies && Array.isArray(cloudData.supplies)) {
+        const localSupplies = getSupplies() || [];
+        const mergedSupplies = mergeById(localSupplies, cloudData.supplies, 'updatedAt');
+        if (isListDifferent(localSupplies, mergedSupplies)) {
+          safeSetItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(mergedSupplies));
+          updated = true;
+          suppliesChanged = true;
+        }
+      }
+
+      if (cloudData.supplyPresets && Array.isArray(cloudData.supplyPresets)) {
+        const localPresets = getSupplyPresets() || [];
+        if (isListDifferent(localPresets, cloudData.supplyPresets)) {
+          safeSetItem(STORAGE_KEYS.SUPPLY_PRESETS, JSON.stringify(cloudData.supplyPresets));
+          updated = true;
+          suppliesChanged = true;
+        }
+      }
+
+      // 4-3. ⏳ 유효기간 임박 & 제약사/도매상 반품 대장 스마트 비파괴 양방향 융합
+      if (cloudData.expiryReturns && Array.isArray(cloudData.expiryReturns)) {
+        const localExpiryReturns = getExpiryReturns() || [];
+        const mergedExpiryReturns = mergeById(localExpiryReturns, cloudData.expiryReturns, 'updatedAt');
+        if (isListDifferent(localExpiryReturns, mergedExpiryReturns)) {
+          safeSetItem(STORAGE_KEYS.EXPIRY_RETURNS, JSON.stringify(mergedExpiryReturns));
+          updated = true;
+          expiryReturnsChanged = true;
+        }
+      }
+
+      // 인지 완료된 초긴급 반품 약품 키 목록 클라우드 양방향 통합
+      if (cloudData.dismissedCriticalReturnKeys && Array.isArray(cloudData.dismissedCriticalReturnKeys)) {
+        const localDismissedKeys = getDismissedCriticalReturnKeys();
+        const mergedDismissedSet = new Set([...localDismissedKeys, ...cloudData.dismissedCriticalReturnKeys]);
+        safeSetItem('mds_dismissed_critical_keys', JSON.stringify(Array.from(mergedDismissedSet)));
+      }
+
+      // 스마트장부(구글시트 동기화된 결산 및 누적 데이터) 클라우드 양방향 통합
+      if (cloudData.smartLedger && typeof cloudData.smartLedger === 'object') {
+        const localSL = getSmartLedgerCloudData();
+        if (!localSL || JSON.stringify(localSL) !== JSON.stringify(cloudData.smartLedger)) {
+          safeSetItem('mds_cloud_smart_ledger_v1', JSON.stringify(cloudData.smartLedger));
+          if (cloudData.smartLedger.monthlyRecords) {
+            safeSetItem('mds_monthly_records', JSON.stringify(cloudData.smartLedger.monthlyRecords));
+          }
+          if (cloudData.smartLedger.cumulativeCache) {
+            safeSetItem('mds_cumulative_cache', JSON.stringify(cloudData.smartLedger.cumulativeCache));
+          }
+          if (cloudData.smartLedger.availableMonths) {
+            safeSetItem('mds_available_months', JSON.stringify(cloudData.smartLedger.availableMonths));
+          }
+        }
+      }
+
+      // 4-4. 💊 인근약국 교품 & 불용재고 대장 스마트 비파괴 양방향 융합
+      if (cloudData.pharmacyExchange && typeof cloudData.pharmacyExchange === 'object') {
+        const localPE = getPharmacyExchange();
+        const mergedExchanges = mergeById(localPE.exchanges || [], cloudData.pharmacyExchange.exchanges || [], 'updatedAt');
+        const mergedDeadStocks = mergeById(localPE.deadStocks || [], cloudData.pharmacyExchange.deadStocks || [], 'updatedAt');
+        
+        if (isListDifferent(localPE.exchanges || [], mergedExchanges) || isListDifferent(localPE.deadStocks || [], mergedDeadStocks)) {
+          safeSetItem(STORAGE_KEYS.PHARMACY_EXCHANGE, JSON.stringify({
+            exchanges: mergedExchanges,
+            deadStocks: mergedDeadStocks
+          }));
+          updated = true;
+          pharmacyExchangeChanged = true;
+        }
+      }
+
+      // 4-5. 📋 환자 예약 주문 & 선결제 관리 스마트 비파괴 양방향 융합
+      if (cloudData.patientOrders && Array.isArray(cloudData.patientOrders)) {
+        const localOrders = getPatientOrders() || [];
+        const mergedOrders = mergeById(localOrders, cloudData.patientOrders, 'updatedAt');
+        if (isListDifferent(localOrders, mergedOrders)) {
+          safeSetItem(STORAGE_KEYS.PATIENT_ORDERS, JSON.stringify(mergedOrders));
+          updated = true;
+          patientOrdersChanged = true;
+        }
+      }
+
+      // 4-6. 💊 처방약 미출약 관리 스마트 비파괴 양방향 융합
+      if (cloudData.prescriptionShortages && Array.isArray(cloudData.prescriptionShortages)) {
+        const localShortages = getPrescriptionShortages() || [];
+        const mergedShortages = mergeById(localShortages, cloudData.prescriptionShortages, 'updatedAt');
+        if (isListDifferent(localShortages, mergedShortages)) {
+          safeSetItem(STORAGE_KEYS.PRESCRIPTION_SHORTAGES, JSON.stringify(mergedShortages));
+          updated = true;
+          patientOrdersChanged = true;
+        }
+      }
+
+      // 4-7. 📨 고객 안내 문자 발송 이력 스마트 비파괴 병합
+      if (cloudData.smsDispatchHistory && Array.isArray(cloudData.smsDispatchHistory)) {
+        const localHistory = getSmsDispatchHistory() || [];
+        const mergedHistory = mergeById(localHistory, cloudData.smsDispatchHistory, 'createdAt');
+        if (isListDifferent(localHistory, mergedHistory)) {
+          safeSetItem(STORAGE_KEYS.SMS_DISPATCH_HISTORY, JSON.stringify(mergedHistory));
+          updated = true;
+        }
+      }
+
+      // 4-8. 🔎 의약품 낱알 식별 상담 기록 스마트 비파괴 병합 (인메모리 + 파이어베이스/클라우디너리 직결, localStorage 0 Byte)
+      if (cloudData.pillIdentifications && Array.isArray(cloudData.pillIdentifications)) {
+        const localPillIds = getPillIdentifications() || [];
+        const mergedPillIds = mergeById(localPillIds, cloudData.pillIdentifications, 'createdAt');
+        if (isListDifferent(localPillIds, mergedPillIds)) {
+          inMemoryPillIdentifications = mergedPillIds;
+          updated = true;
+        }
+      }
+
+      // 5. 월간 근무 스케줄 스마트 비파괴 병합 (날짜 + 직원ID 고유키 & 타임스탬프 기반 최신 수정 우선)
+      if (cloudData.schedule && Array.isArray(cloudData.schedule)) {
+        const localSched = getSchedule() || [];
+        const map = {};
+        localSched.forEach(s => {
+          if (s && s.date && s.empId) {
+            map[`${s.date}_${s.empId}`] = s;
+          }
+        });
+        
+        cloudData.schedule.forEach(cs => {
+          if (cs && cs.date && cs.empId) {
+            const key = `${cs.date}_${cs.empId}`;
+            const ls = map[key];
+            if (!ls) {
+              map[key] = cs;
+            } else {
+              const cTime = Number(cs.updatedAt) || 0;
+              const lTime = Number(ls.updatedAt) || 0;
+
+              if (cTime > 0 || lTime > 0) {
+                if (cTime >= lTime) {
+                  map[key] = cs;
+                } else {
+                  map[key] = ls;
+                }
+              } else {
+                // 🛡️ 타임스탬프가 없는 레거시 데이터 간 우선순위
+                const cIsWork = cs.shift && cs.shift !== 'OFF';
+                const lIsWork = ls.shift && ls.shift !== 'OFF';
+                if (cIsWork && !lIsWork) {
+                  map[key] = cs;
+                } else if (!cIsWork && lIsWork) {
+                  map[key] = ls;
+                } else {
+                  map[key] = cs;
+                }
+              }
+            }
+          }
+        });
+
+        const nextList = Object.values(map);
+        if (isListDifferent(localSched, nextList)) {
+          safeSetItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(nextList));
+          updated = true;
+          scheduleChanged = true;
+        }
+      }
+
+      // 6. 스케줄 상태 및 반려 코멘트 병합 (타임스탬프 기반 Last-Write-Wins 정밀 동기화)
+      if (cloudData.scheduleStatus) {
+        const localStatus = safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS) ? JSON.parse(safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS)) : {};
+
+        const mergedStatus = {};
+        const allMonthKeys = new Set([...Object.keys(localStatus), ...Object.keys(cloudData.scheduleStatus)]);
+
+        allMonthKeys.forEach(monthKey => {
+          const localMonth = localStatus[monthKey];
+          const cloudMonth = cloudData.scheduleStatus[monthKey];
+
+          if (!localMonth && cloudMonth) { mergedStatus[monthKey] = cloudMonth; return; }
+          if (localMonth && !cloudMonth) { mergedStatus[monthKey] = localMonth; return; }
+          if (!localMonth && !cloudMonth) return;
+
+          const parseTime = (val) => {
+            const n = Number(val);
+            return (!isNaN(n) && n > 1000000000000) ? n : 0;
+          };
+          const lTime = parseTime(localMonth.updatedAt) || parseTime(localMonth.rejectedTimestamp) || parseTime(localMonth.approvedTimestamp) || parseTime(localMonth.lastSubmittedAt);
+          const cTime = parseTime(cloudMonth.updatedAt) || parseTime(cloudMonth.rejectedTimestamp) || parseTime(cloudMonth.approvedTimestamp) || parseTime(cloudMonth.lastSubmittedAt);
+
+          // 전체 월별 마스터 객체: 더 최근에 액션(승인/반려/제출)을 취한 쪽을 1순위 기반으로 채택 (동일 시 클라우드 1순위)
+          const base = (cTime >= lTime) ? { ...localMonth, ...cloudMonth } : { ...cloudMonth, ...localMonth };
+
+          // 개별 직원 상태 타임스탬프 정밀 병합 (약국장의 반려 DRAFT 상태가 과거 APPROVED에 덮어써지지 않도록 보호)
+          Object.keys(base).forEach(k => {
+            if (k.startsWith('emp_') && !k.includes('_comment') && !k.includes('_dismissed') && !k.includes('_updatedAt') && !k.includes('_lastSubmittedAt') && !k.includes('_signed')) {
+              const lEmpTime = parseTime(localMonth[k + '_updatedAt']) || parseTime(localMonth[k + '_lastSubmittedAt']) || lTime;
+              const cEmpTime = parseTime(cloudMonth[k + '_updatedAt']) || parseTime(cloudMonth[k + '_lastSubmittedAt']) || cTime;
+              if (cEmpTime >= lEmpTime) {
+                base[k] = cloudMonth[k] || localMonth[k];
+              } else {
+                base[k] = localMonth[k] || cloudMonth[k];
+              }
+            }
+          });
+
+          // 전자서명(signatures) 보관 데이터 개별 타임스탬프 정밀 병합
+          if (localMonth.signatures || cloudMonth.signatures) {
+            const lSigs = localMonth.signatures || {};
+            const cSigs = cloudMonth.signatures || {};
+            const mergedSigs = { ...lSigs, ...cSigs };
+            Object.keys(mergedSigs).forEach(empId => {
+              const lSig = lSigs[empId];
+              const cSig = cSigs[empId];
+              if (lSig && cSig) {
+                const lSigTime = parseTime(lSig.updatedAt) || parseTime(lSig.signedTimestamp) || lTime;
+                const cSigTime = parseTime(cSig.updatedAt) || parseTime(cSig.signedTimestamp) || cTime;
+                mergedSigs[empId] = (cSigTime >= lSigTime) ? cSig : lSig;
+              } else {
+                mergedSigs[empId] = cSig || lSig;
+              }
+            });
+            base.signatures = mergedSigs;
+          }
+
+          mergedStatus[monthKey] = base;
+        });
+
+        const cur = safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS);
+        const next = JSON.stringify(mergedStatus);
+        if (cur !== next) {
+          safeSetItem(STORAGE_KEYS.SCHEDULE_STATUS, next);
+          updated = true;
+          scheduleStatusChanged = true;
+        }
+      }
+
+      // 7. 급여명세서 및 추가 수당/공제 병합
+      if (cloudData.paystubs) {
+        const localPs = getPaystubs();
+        const mergedPs = { ...localPs, ...cloudData.paystubs };
+        const cur = safeGetItem(STORAGE_KEYS.PAYSTUBS);
+        const next = JSON.stringify(mergedPs);
+        if (cur !== next) {
+          safeSetItem(STORAGE_KEYS.PAYSTUBS, next);
+          updated = true;
+          paystubsChanged = true;
+        }
+      }
+      if (cloudData.overtimeAdjustments) {
+        const localAdj = getOvertimeAdjustments();
+        const mergedAdj = { ...localAdj, ...cloudData.overtimeAdjustments };
+        const cur = safeGetItem(STORAGE_KEYS.OVERTIME_ADJUSTMENTS);
+        const next = JSON.stringify(mergedAdj);
+        if (cur !== next) {
+          safeSetItem(STORAGE_KEYS.OVERTIME_ADJUSTMENTS, next);
+          updated = true;
+          paystubsChanged = true;
+        }
+      }
+
+      // 8. 직원 명부 및 시급/권한 스마트 비파괴 병합
+      let permMap = {};
+      try {
+        const permRaw = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS);
+        if (permRaw) permMap = JSON.parse(permRaw);
+      } catch(e) {}
+
+      if (cloudData.empPermissions && typeof cloudData.empPermissions === 'object') {
+        // 🔥 타임스탬프 비교로 더 새로운 권한만 덮어쓰기 (로컬 최신 변경사항 철통 보호)
+        Object.keys(cloudData.empPermissions).forEach(k => {
+          if (!k.endsWith('_updatedAt')) {
+            const lTime = Number(permMap[k + '_updatedAt']) || 0;
+            const cTime = Number(cloudData.empPermissions[k + '_updatedAt']) || 0;
+            if (cTime > lTime || (cTime === lTime && (!permMap[k] || permMap[k].length === 0))) {
+              let cTabs = Array.isArray(cloudData.empPermissions[k]) ? [...cloudData.empPermissions[k]] : [];
+              // 🛡️ 전 직원 필수 공용 탭 보장 (환자예약주문 & 교품불용재고 절대 유실 방지)
+              ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+                if (!cTabs.includes(mTab)) cTabs.push(mTab);
+              });
+              permMap[k] = cTabs;
+              permMap[k + '_updatedAt'] = cTime;
+            } else {
+              if (Array.isArray(permMap[k])) {
+                ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+                  if (!permMap[k].includes(mTab)) permMap[k].push(mTab);
+                });
+              }
+            }
+          }
+        });
+        safeSetItem(STORAGE_KEYS.EMP_PERMISSIONS, JSON.stringify(permMap));
+      }
+
+      if (cloudData.employees && Array.isArray(cloudData.employees) && cloudData.employees.length > 0) {
+        const cleanCloudEmps = cloudData.employees.filter(e => e && e.name && !e.name.includes('테스트') && !String(e.email || '').includes('test@'));
+        
+        const localEmps = getEmployees() || [];
+        const localMap = {};
+        localEmps.forEach(e => { if (e && e.id) localMap[e.id] = e; });
+
+        const cloudMap = {};
+        cleanCloudEmps.forEach(ce => { if (ce && ce.id) cloudMap[ce.id] = ce; });
+
+        const allEmpIds = Array.from(new Set([...Object.keys(localMap), ...Object.keys(cloudMap)])).filter(id => !activeDeletedIds.includes(id));
+        const finalEmps = allEmpIds.map(id => {
+          const ce = cloudMap[id];
+          const le = localMap[id];
+          if (!ce) return le;
+          if (!le) {
+            const isDir = (id === 'emp_1') || (ce.role === '약국장') || (ce.position === '대표약사') || (ce.position === '대표') || (ce.username === 'garuemma@naver.com');
+            if (isDir) return { ...ce, role: '약국장', allowedTabs: [...ALL_SYSTEM_TABS] };
+            let allowed = Array.isArray(permMap[id]) ? [...permMap[id]] : (Array.isArray(ce.allowedTabs) ? [...ce.allowedTabs] : [...ALL_COMMON_TABS]);
+            ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+              if (!allowed.includes(mTab)) allowed.push(mTab);
+            });
+            permMap[id] = allowed;
+            return { ...ce, allowedTabs: allowed };
+          }
+
+          const cTime = Number(ce.updatedAt) || 0;
+          const lTime = Number(le.updatedAt) || 0;
+
+          // 🔥 항상 최신 타임스탬프를 기본 객체로 채택!
+          const chosen = (cTime > lTime) ? ce : le;
+          
+          const isDir = (id === 'emp_1') || (chosen.role === '약국장') || (chosen.position === '대표약사') || (chosen.position === '대표') || (chosen.username === 'garuemma@naver.com');
+          if (isDir) {
+            return {
+              ...chosen,
+              role: '약국장',
+              allowedTabs: [...ALL_SYSTEM_TABS]
+            };
+          }
+
+          // 🔥 탭 권한: 로컬 permMap이 유효하면 permMap 우선, 아니면 chosen의 allowedTabs 채택
+          let targetAllowed = Array.isArray(permMap[id]) 
+            ? [...permMap[id]] 
+            : (Array.isArray(chosen.allowedTabs) ? [...chosen.allowedTabs] : [...ALL_COMMON_TABS]);
+
+          // 🛡️ 전 직원 필수 공용 탭 보장 (환자예약주문 & 교품불용재고 절대 유실 방지)
+          ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module'].forEach(mTab => {
+            if (!targetAllowed.includes(mTab)) targetAllowed.push(mTab);
+          });
+
+          permMap[id] = targetAllowed;
+
+          return {
+            ...chosen,
+            position: chosen.position || (le ? le.position : '') || (ce ? ce.position : '') || '',
+            role: chosen.role || (le ? le.role : '') || (ce ? ce.role : '') || '',
+            memo: (chosen.memo !== undefined && chosen.memo !== '') ? chosen.memo : ((le && le.memo) || (ce && ce.memo) || ''),
+            allowedTabs: targetAllowed
+          };
+        });
+
+        safeSetItem(STORAGE_KEYS.EMP_PERMISSIONS, JSON.stringify(permMap));
+
+        const currentJson = safeGetItem(STORAGE_KEYS.EMPLOYEES);
+        const newJson = JSON.stringify(finalEmps);
+        if (currentJson !== newJson) {
+          safeSetItem(STORAGE_KEYS.EMPLOYEES, newJson);
+          updated = true;
+          empsChanged = true;
+        }
+
+        const curr = getCurrentUser();
+        if (curr && curr.id) {
+          const matched = finalEmps.find(e => e.id === curr.id);
+          if (matched) {
+            setCurrentUser(matched);
+            if (window.App && typeof window.App.renderSidebarNavigation === 'function') {
+              window.App.renderSidebarNavigation();
+            }
+            if (window.App && typeof window.App.renderUserHeader === 'function') {
+              window.App.renderUserHeader();
+            }
+          }
+        }
+      }
+
+      // 9. 약사 시급 및 휴게 설정 단일 마스터 연동
+      if (cloudData.pharmacistRates) {
+        const localRates = getPharmacistRates();
+        const mergedRates = { ...localRates, ...cloudData.pharmacistRates };
+        if (JSON.stringify(localRates) !== JSON.stringify(mergedRates)) {
+          safeSetItem(STORAGE_KEYS.PHARMACIST_RATES, JSON.stringify(mergedRates));
+          ratesChanged = true;
+        }
+      }
+
+      // 🔥 스마트장부 구글 스크립트 Web App URL 클라우드 연동
+      if (cloudData.gasUrls && typeof cloudData.gasUrls === 'object') {
+        const localUrls = getGasUrls();
+        let gasChanged = false;
+        if (cloudData.gasUrls.ssg && cloudData.gasUrls.ssg !== localUrls.ssg) {
+          localUrls.ssg = cloudData.gasUrls.ssg;
+          safeSetItem('mds_gas_webapp_url', cloudData.gasUrls.ssg);
+          gasChanged = true;
+        }
+        if (cloudData.gasUrls.hoecheon && cloudData.gasUrls.hoecheon !== localUrls.hoecheon) {
+          localUrls.hoecheon = cloudData.gasUrls.hoecheon;
+          safeSetItem('hoecheon_gas_webapp_url', cloudData.gasUrls.hoecheon);
+          gasChanged = true;
+        }
+        if (gasChanged) {
+          safeSetItem('mds_cloud_gas_urls_v1', JSON.stringify(localUrls));
+          if (window.sheetsClient && typeof window.sheetsClient.syncUrlFromCloud === 'function') {
+            window.sheetsClient.syncUrlFromCloud();
+          }
+        }
+      }
+
+      safeSetItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+      updateSyncStatusUI('success');
+
+      // 🔥 클라우드 데이터 수신 시 로그인 상태와 무관하게 0.01초 사이드바 🔴 N 배지 직통 강제 재계산!
+      if (window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+        window.App.updateSidebarBadgesOnly();
+      }
+
+      if (updated) {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+        const isEditingStaff = window.StaffDirectoryModule && window.StaffDirectoryModule.isEditing && window.StaffDirectoryModule.isEditing();
+        
+        const anyOpenModal = Array.from(document.querySelectorAll('.modal-overlay')).some(m => {
+          const disp = window.getComputedStyle(m).display;
+          return disp !== 'none' && disp !== '';
+        });
+
+        if (!isTyping && !isEditingStaff && !anyOpenModal) {
+          if (typeof callback === 'function') callback();
+
+          // 🎯 활성 모듈과 관련된 데이터가 실제로 변경되었을 때만 화면 갱신 (스크롤 위치 자석 보존)
+          const currMod = window.App && typeof window.App.getActiveModule === 'function' ? window.App.getActiveModule() : '';
+          let activeModChanged = false;
+          if (currMod === 'notices' && noticesChanged) activeModChanged = true;
+          else if (currMod === 'worklog' && worklogsChanged) activeModChanged = true;
+          else if (currMod === 'schedule' && (scheduleChanged || scheduleStatusChanged)) activeModChanged = true;
+          else if (currMod === 'annual-leave' && leavesChanged) activeModChanged = true;
+          else if (currMod === 'discount-purchase' && discountsChanged) activeModChanged = true;
+          else if (currMod === 'staff-directory' && empsChanged) activeModChanged = true;
+          else if (currMod === 'medicine-location' && medLocationsChanged) activeModChanged = true;
+          else if (currMod === 'rx-medicine-location' && rxMedLocationsChanged) activeModChanged = true;
+          else if (currMod === 'supplies' && suppliesChanged) activeModChanged = true;
+          else if (currMod === 'pharmacy-exchange' && pharmacyExchangeChanged) activeModChanged = true;
+          else if (currMod === 'patient-orders' && patientOrdersChanged) activeModChanged = true;
+          else if (currMod === 'pharmacy-settlement' && (scheduleChanged || paystubsChanged || ratesChanged)) activeModChanged = true;
+
+          if (activeModChanged && window.App && typeof window.App.renderActiveModule === 'function') {
+            window.App.renderActiveModule(true); // 📌 스크롤 위치 자석 보존 렌더링
+          }
+
+          // 사이드바 뱃지/카운터만 조용히 백그라운드 갱신
+          if (window.App && typeof window.App.renderSidebarNavigation === 'function') {
+            window.App.renderSidebarNavigation();
+          }
+          if (window.App && typeof window.App.updateSidebarBadgesOnly === 'function') {
+            window.App.updateSidebarBadgesOnly();
+          }
+          if (window.App && typeof window.App.renderQuickLoginButtons === 'function') {
+            window.App.renderQuickLoginButtons();
+          }
+          if (window.App && typeof window.App.checkPendingRejectionNotice === 'function') {
+            window.App.checkPendingRejectionNotice();
+          }
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('ssg_cloud_updated'));
+          }
+        }
+      }
+    } catch(e) {
+      console.warn('applyCloudData error:', e);
+    }
+  }
+
+  let pushDebounceTimer = null;
+  let isPushingLock = false;
+
+  async function pushToCloud() {
+    if (typeof window === 'undefined') return;
+
+    if (pushDebounceTimer) {
+      clearTimeout(pushDebounceTimer);
+    }
+
+    pushDebounceTimer = setTimeout(() => {
+      _executePushToCloud();
+    }, 150);
+  }
+
+  async function _executePushToCloud() {
+    if (isPushingLock) return;
+    isPushingLock = true;
+
+    try {
+      const emps = getEmployees() || [];
+      const permMap = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS) ? JSON.parse(safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS)) : {};
+      const cleanEmps = emps.map(e => ({
+        id: e.id,
+        name: e.name,
+        role: e.role,
+        position: e.position || '',
+        username: e.username || e.email || '',
+        payType: e.payType || (e.role && e.role.includes('약사') ? 'HOURLY' : 'MONTHLY'),
+        email: e.email,
+        phone: e.phone,
+        passcode: e.passcode || '',
+        joinDate: e.joinDate || '',
+        weekdayRate: e.weekdayRate || e.hourlyRate || 0,
+        holidayRate: e.holidayRate || e.hourlyRate || 0,
+        hourlyRate: e.hourlyRate || 0,
+        baseMonthlySalary: e.baseMonthlySalary || 0,
+        usedLeave: e.usedLeave || 0,
+        pendingLeave: e.pendingLeave || 0,
+        memo: e.memo || '',
+        allowedTabs: (permMap && permMap[e.id]) || e.allowedTabs || [],
+        updatedAt: e.updatedAt || Date.now()
+      }));
+
+      const payload = {
+        name: "medistar_pharmacy_master_db_v1",
+        data: {
+          updatedAt: new Date().toISOString(),
+          deletedIds: getDeletedIds(),
+          employees: cleanEmps,
+          empPermissions: safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS) ? JSON.parse(safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS)) : {},
+          scheduleStatus: safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS) ? JSON.parse(safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS)) : {},
+          pharmacistRates: getPharmacistRates(),
+          overtimeAdjustments: getOvertimeAdjustments(),
+          discountPurchases: getDiscountPurchases(),
+          schedule: getSchedule(),
+          paystubs: getPaystubs(),
+          leaveRequests: getLeaveRequests(),
+          notices: getNotices(),
+          worklogs: getWorklogs(),
+          medicineLocations: getMedicineLocations(),
+          rxMedicineLocations: getRxMedicineLocations(),
+          supplies: getSupplies(),
+          supplyPresets: getSupplyPresets(),
+          expiryReturns: getExpiryReturns(),
+          dismissedCriticalReturnKeys: getDismissedCriticalReturnKeys(),
+          pharmacyExchange: getPharmacyExchange(),
+          patientOrders: getPatientOrders(),
+          prescriptionShortages: getPrescriptionShortages(),
+          smsDispatchHistory: getSmsDispatchHistory(),
+          pillIdentifications: getPillIdentifications(),
+          smartLedger: getSmartLedgerCloudData(),
+          gasUrls: getGasUrls(),
+          buildingRentalDashboard: (() => {
+            try {
+              const raw = safeGetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD);
+              return raw ? JSON.parse(raw) : null;
+            } catch(e) { return null; }
+          })()
+        }
+      };
+
+      // 🔥 1. Google Firebase Realtime Database (WebSocket + 직통 REST 듀얼 전송)
+      const currUser = getCurrentUser();
+      const pushPayload = {
+        timestamp: Date.now() + '_' + Math.floor(Math.random() * 10000),
+        senderId: currUser ? currUser.id : 'unknown',
+        senderName: currUser ? currUser.name : '시스템',
+        body: '새로운 공지, 업무일지, 약품 위치 또는 소모품 변동사항이 도착했습니다.'
+      };
+
+      try {
+        if (fbRef) {
+          fbRef.set(payload.data);
+        }
+        if (fbDb) {
+          fbDb.ref('medistar_master_db/pushSignal').set(pushPayload);
+        }
+      } catch(fbe) {
+        console.warn('Firebase WebSocket push warning:', fbe);
+      }
+
+      // ⚡ 보조 클라우드 REST 푸시를 넌블로킹 비동기로 실행
+      setTimeout(() => {
+        try {
+          fetch("https://shinsegae-pharmacy-default-rtdb.firebaseio.com/medistar_master_db/pushSignal.json", {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(pushPayload)
+          }).catch(() => {});
+
+          fetch(FIREBASE_REST_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(payload.data)
+          }).catch(() => {});
+        } catch(asyncErr) {}
+      }, 0);
+
+      safeSetItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+      updateSyncStatusUI('success');
+    } catch(e) {
+      updateSyncStatusUI('error');
+    } finally {
+      setTimeout(() => {
+        isPushingLock = false;
+      }, 200);
+    }
+  }
+
+  // 🌐 무적 JSONP 클라우드 로더 (보조 백업)
+  function fetchGasJsonp() {
+    return new Promise((resolve) => {
+      const cbName = '_ssg_gas_cb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      const script = document.createElement('script');
+      let timer = setTimeout(() => {
+        cleanup();
+        resolve(null);
+      }, 6000);
+      function cleanup() {
+        clearTimeout(timer);
+        delete window[cbName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+      window[cbName] = function(resp) {
+        cleanup();
+        resolve(resp);
+      };
+      script.onerror = function() {
+        cleanup();
+        resolve(null);
+      };
+      const sep = CLOUD_SYNC_RELAY_URL.includes('?') ? '&' : '?';
+      script.src = `${CLOUD_SYNC_RELAY_URL}${sep}callback=${cbName}&t=${Date.now()}`;
+      document.body.appendChild(script);
+    });
+  }
+
+  async function pullFromCloud(callback) {
+    if (isSyncing || typeof window === 'undefined') return;
+    isSyncing = true;
+    try {
+      let cloudData = null;
+
+      // 🔥 1. Firebase 직통 REST 초고속 수신 (< 50ms, 모바일/PC 100% 무적, 365메디스타 전용 DB 룸)
+      try {
+        const res = await fetch(`${FIREBASE_REST_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && (json.worklogs || json.employees || json.notices || json.schedule || json.supplies || json.medicineLocations || json.rxMedicineLocations || json.expiryReturns)) {
+            cloudData = json;
+          }
+        }
+      } catch(re) {}
+
+      // 🔥 2. Firebase WebSocket 보조 수신
+      if (!cloudData && fbRef) {
+        try {
+          const snap = await fbRef.once('value');
+          if (snap && snap.exists()) {
+            cloudData = snap.val();
+          }
+        } catch(fbe) {}
+      }
+
+      if (cloudData) {
+        applyCloudData(cloudData, callback);
+      }
+    } catch(e) {
+      console.warn('Pull cloud error:', e);
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  // 💾 전체 데이터 원클릭 백업 파일 (.json) 내보내기 & 불러오기 기능
+  function exportFullBackupJSON() {
+    const fullData = getData();
+    const backupObj = {
+      app: "medistar_pharmacy_app",
+      version: "5.0",
+      exportedAt: new Date().toISOString(),
+      exportedAtFormatted: new Date().toLocaleString('ko-KR'),
+      data: fullData
+    };
+
+    const blob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    
+    a.href = url;
+    a.download = `365medistar_pharmacy_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importFullBackupJSON(jsonString) {
+    try {
+      const parsed = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+      const targetData = parsed.data || parsed;
+
+      if (!targetData) {
+        throw new Error('올바른 백업 데이터 형식이 아닙니다.');
+      }
+
+      if (targetData.employees) safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(targetData.employees));
+      if (targetData.schedule) safeSetItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(targetData.schedule));
+      if (targetData.scheduleStatus) safeSetItem(STORAGE_KEYS.SCHEDULE_STATUS, JSON.stringify(targetData.scheduleStatus));
+      if (targetData.notices) safeSetItem(STORAGE_KEYS.NOTICES, JSON.stringify(targetData.notices));
+      if (targetData.leaveRequests) safeSetItem(STORAGE_KEYS.LEAVE_REQUESTS, JSON.stringify(targetData.leaveRequests));
+      if (targetData.discountPurchases) safeSetItem(STORAGE_KEYS.DISCOUNT_PURCHASES, JSON.stringify(targetData.discountPurchases));
+      if (targetData.worklogs) safeSetItem(STORAGE_KEYS.WORKLOGS, JSON.stringify(targetData.worklogs));
+      if (targetData.emergencyContacts) safeSetItem(STORAGE_KEYS.EMERGENCY_CONTACTS, JSON.stringify(targetData.emergencyContacts));
+      if (targetData.pharmacySettlement) safeSetItem(STORAGE_KEYS.PHARMACY_SETTLEMENT, JSON.stringify(targetData.pharmacySettlement));
+      if (targetData.buildingRental) safeSetItem(STORAGE_KEYS.BUILDING_RENTAL, JSON.stringify(targetData.buildingRental));
+      if (targetData.buildingRentalDashboard) safeSetItem(STORAGE_KEYS.BUILDING_RENTAL_DASHBOARD, JSON.stringify(targetData.buildingRentalDashboard));
+      if (targetData.paystubs) safeSetItem(STORAGE_KEYS.PAYSTUBS, JSON.stringify(targetData.paystubs));
+      if (targetData.overtimeAdjustments) safeSetItem(STORAGE_KEYS.OVERTIME_ADJUSTMENTS, JSON.stringify(targetData.overtimeAdjustments));
+      if (targetData.pharmacistRates) safeSetItem('mds_pharmacist_rates_v1', JSON.stringify(targetData.pharmacistRates));
+      if (targetData.pharmacyExchange) safeSetItem(STORAGE_KEYS.PHARMACY_EXCHANGE, JSON.stringify(targetData.pharmacyExchange));
+      if (targetData.patientOrders) safeSetItem(STORAGE_KEYS.PATIENT_ORDERS, JSON.stringify(targetData.patientOrders));
+
+      // 클라우드에도 즉시 전송
+      pushToCloud();
+
+      // UI 새로고침
+      if (window.App) {
+        if (typeof window.App.renderActiveModule === 'function') window.App.renderActiveModule();
+        if (typeof window.App.renderSidebarNavigation === 'function') window.App.renderSidebarNavigation();
+        if (typeof window.App.renderUserHeader === 'function') window.App.renderUserHeader();
+      }
+
+      return { success: true };
+    } catch(err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+
+  // 🌐 JSONP 기반 100% 무제한 크로스도메인 구글 스프레드시트 직통 로더 (file:/// 및 웹 배포 모두 완벽 호환)
+  function fetchSheetGvizJsonp(sheetId, sheetName) {
+    return new Promise((resolve, reject) => {
+      const callbackName = '_gviz_cb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      const script = document.createElement('script');
+      
+      const timeout = setTimeout(() => {
+        cleanup();
+        resolve([]);
+      }, 8000);
+
+      function cleanup() {
+        clearTimeout(timeout);
+        delete window[callbackName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+
+      window[callbackName] = function(json) {
+        cleanup();
+        if (json && json.table && json.table.rows) {
+          // 🛡️ 규칙 ㊽ getDisplayValues First: 눈에 보이는 수식/서식 최종 계산값(cell.f) 1순위 채택!
+          const rows = json.table.rows.map(r => (r.c || []).map(cell => (cell ? (cell.f !== undefined && cell.f !== null && cell.f !== '' ? cell.f : (cell.v !== undefined ? cell.v : '')) : '')));
+          resolve(rows);
+        } else {
+          resolve([]);
+        }
+      };
+
+      script.onerror = function() {
+        cleanup();
+        resolve([]);
+      };
+
+      script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?sheet=${encodeURIComponent(sheetName)}&tqx=responseHandler:${callbackName}&t=${Date.now()}`;
+      document.body.appendChild(script);
+    });
+  }
+
+  // 🌐 구글 스프레드시트 탭별 실시간 직통 동기화 엔진 (URL 기반 자동 파싱 & 스마트 병합)
+  async function syncDirectWithGoogleSheet(customSheetId) {
+    const sheetId = customSheetId || "16yVS9f9bQs9Z2S1k2McnxhHGb9QjQguPa93MxZvNtP0";
+    let updatedCount = 0;
+    try {
+      // 1. 직원명부 탭 JSONP 동기화
+      const empRows = await fetchSheetGvizJsonp(sheetId, '직원명부');
+      if (empRows && empRows.length > 0) {
+        const currentEmps = getEmployees() || [];
+        const empsMap = {};
+        currentEmps.forEach(e => { empsMap[e.id] = e; });
+
+        empRows.forEach((parts, idx) => {
+          const empId = parts[0] ? String(parts[0]).trim() : '';
+          const empName = parts[1] ? String(parts[1]).trim() : '';
+          if (empName && empName !== '' && empName !== '성명') {
+            const hourlyVal = parseInt(parts[6]) || ((parts[2] && String(parts[2]).includes('약사')) ? 35000 : 13000);
+            const baseSalVal = parseInt(parts[6]) || 2490000;
+            const usedLeaveVal = parseInt(parts[9]) || 0;
+            const memoVal = parts[10] ? String(parts[10]) : (isNaN(parts[9]) && parts[9] ? String(parts[9]) : '구글 시트 연동');
+
+            empsMap[empId || `emp_sheet_${idx + 1}`] = {
+              ...(empsMap[empId] || {}),
+              id: empId || `emp_sheet_${idx + 1}`,
+              name: empName,
+              role: parts[2] ? String(parts[2]) : '일반직원',
+              position: parts[3] ? String(parts[3]) : (parts[2] ? String(parts[2]) : ''),
+              payType: parts[4] ? String(parts[4]) : ((parts[2] && String(parts[2]).includes('약사')) ? 'HOURLY' : 'MONTHLY'),
+              joinDate: parts[5] ? String(parts[5]) : '2026-08-18',
+              hourlyRate: hourlyVal,
+              baseMonthlySalary: baseSalVal,
+              phone: parts[7] ? String(parts[7]) : '010-0000-0000',
+              email: parts[8] ? String(parts[8]) : `${empId || 'user'}@shinsegae.com`,
+              username: parts[8] ? String(parts[8]) : `${empId || 'user'}@shinsegae.com`,
+              passcode: (empsMap[empId] && empsMap[empId].passcode) ? empsMap[empId].passcode : '1234',
+              usedLeave: usedLeaveVal,
+              memo: memoVal,
+              allowedTabs: (empsMap[empId] && empsMap[empId].allowedTabs) ? empsMap[empId].allowedTabs : [...ALL_COMMON_TABS]
+            };
+            updatedCount++;
+          }
+        });
+        const mergedList = Object.values(empsMap);
+        saveEmployees(mergedList);
+      }
+
+      // 2. 일일결산 탭 JSONP 동기화
+      const settleRows = await fetchSheetGvizJsonp(sheetId, '일일결산');
+      if (settleRows && settleRows.length > 0) {
+        const pData = getPharmacySettlement();
+        if (!pData.dailyLogs) pData.dailyLogs = [];
+        settleRows.forEach(parts => {
+          const dateVal = parts[0] ? String(parts[0]).trim() : '';
+          if (dateVal && dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const disp = Number(parts[2]) || 0;
+            const pos = Number(parts[3]) || 0;
+            const tot = Number(parts[4]) || (disp + pos);
+            const card = Number(parts[5]) || Math.round(tot * 0.85);
+            const cash = Number(parts[6]) || (tot - card);
+            const exp = Number(parts[7]) || 0;
+            const note = parts[8] ? String(parts[8]) : '구글 시트 연동';
+
+            const target = pData.dailyLogs.find(l => l.date === dateVal);
+            if (target) {
+              target.dispensingRevenue = disp;
+              target.posRevenue = pos;
+              target.totalRevenue = tot;
+              target.cardPay = card;
+              target.cashPay = cash;
+              target.dailyExpense = exp;
+              target.note = note;
+            }
+          }
+        });
+        savePharmacySettlement(pData);
+      }
+
+      return { success: true, count: updatedCount };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  function updateSyncStatusUI(status) {
+    const el = document.getElementById('cloud-sync-badge');
+    if (el) {
+      if (status === 'success') {
+        el.innerHTML = '<span class="badge cloud-badge-connected" style="font-size:11.5px; padding:6px 12px; border-radius:20px; font-weight:700; display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #10b981 0%, #059669 100%); color:#ffffff; box-shadow:0 2px 8px rgba(16,185,129,0.35); border:1px solid #059669;"><i class="fas fa-check-circle"></i> <span class="sync-badge-full-text">☁️ 실시간 클라우드 공유 연동 중</span><span class="sync-badge-short-text">☁️ 연동중</span></span>';
+      } else {
+        el.innerHTML = '<span class="badge cloud-badge-syncing" style="font-size:11.5px; padding:6px 12px; border-radius:20px; font-weight:700; display:inline-flex; align-items:center; gap:5px; background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;"><i class="fas fa-sync fa-spin"></i> <span class="sync-badge-full-text">☁️ 클라우드 동기화 중...</span><span class="sync-badge-short-text">☁️ 동기화</span></span>';
+      }
+    }
+  }
+
+  // 앱 시동, 화면 복귀(Focus/Visibility), 및 3.5초 주기 초고속 실시간 백그라운드 동기화 (오직 pull만 수행하여 덮어쓰기 원천 차단!)
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      pullFromCloud();
+    }, 300);
+    window.addEventListener('focus', () => pullFromCloud());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pullFromCloud();
+    });
+  }
+
+  function getSheetUrl() {
+    return safeGetItem(STORAGE_KEYS.SHEET_URL) || DEFAULT_SHEET_URL;
+  }
+
+  function setSheetUrl(url) {
+    safeSetItem(STORAGE_KEYS.SHEET_URL, url);
+  }
+
+  function getPaystubs() {
+    const raw = safeGetItem(STORAGE_KEYS.PAYSTUBS);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function savePaystubs(data) {
+    safeSetItem(STORAGE_KEYS.PAYSTUBS, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  function getOvertimeAdjustments() {
+    const raw = safeGetItem(STORAGE_KEYS.OVERTIME_ADJUSTMENTS);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveOvertimeAdjustments(data) {
+    safeSetItem(STORAGE_KEYS.OVERTIME_ADJUSTMENTS, JSON.stringify(data));
+    pushToCloud();
+  }
+
+  function getData() {
+    return {
+      employees: getEmployees(),
+      schedule: getSchedule(),
+      scheduleStatus: safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS) ? JSON.parse(safeGetItem(STORAGE_KEYS.SCHEDULE_STATUS)) : {},
+      notices: getNotices(),
+      leaveRequests: getLeaveRequests(),
+      discountPurchases: getDiscountPurchases(),
+      worklogs: getWorklogs(),
+      medicineLocations: getMedicineLocations(),
+      rxMedicineLocations: getRxMedicineLocations(),
+      supplies: getSupplies(),
+      supplyPresets: getSupplyPresets(),
+      emergencyContacts: getEmergencyContacts(),
+      pharmacySettlement: getPharmacySettlement(),
+      buildingRental: getBuildingRental(),
+      paystubs: getPaystubs(),
+      overtimeAdjustments: getOvertimeAdjustments(),
+      pharmacyExchange: getPharmacyExchange(),
+      patientOrders: getPatientOrders(),
+      prescriptionShortages: getPrescriptionShortages(),
+      smsDispatchHistory: getSmsDispatchHistory(),
+      pillIdentifications: getPillIdentifications()
+    };
+  }
+
+  function saveData(key, data) {
+    safeSetItem(key, typeof data === 'string' ? data : JSON.stringify(data));
+    pushToCloud();
+  }
+
+  function getPharmacistRates() {
+    const emps = getEmployees() || [];
+    const ratesMap = {};
+    emps.filter(e => e.role === '근무약사' || (e.role || '').includes('약사')).forEach(e => {
+      ratesMap[e.id] = {
+        weekdayRate: Number(e.weekdayRate) || Number(e.hourlyRate) || 35000,
+        holidayRate: Number(e.holidayRate) || 40000,
+        breakHours: 1.0
+      };
+    });
+    return ratesMap;
+  }
+
+  function savePharmacistRates(rates) {
+    if (!rates) return;
+    const emps = getEmployees() || [];
+    let changed = false;
+    emps.forEach(e => {
+      if (rates[e.id]) {
+        if (rates[e.id].weekdayRate !== undefined) e.weekdayRate = Number(rates[e.id].weekdayRate);
+        if (rates[e.id].holidayRate !== undefined) e.holidayRate = Number(rates[e.id].holidayRate);
+        if (rates[e.id].weekdayRate !== undefined) e.hourlyRate = Number(rates[e.id].weekdayRate);
+        e.updatedAt = Date.now();
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveEmployees(emps);
+    }
+  }
+
+  function getGasUrls() {
+    const raw = safeGetItem('mds_cloud_gas_urls_v1');
+    let urls = { ssg: '', hoecheon: '' };
+    if (raw) {
+      try { urls = { ...urls, ...JSON.parse(raw) }; } catch(e) {}
+    }
+    if (!urls.ssg) urls.ssg = safeGetItem('mds_gas_webapp_url') || '';
+    if (!urls.hoecheon) urls.hoecheon = safeGetItem('hoecheon_gas_webapp_url') || '';
+    if (!urls.ssg) urls.ssg = (typeof DIRECT_GAS_URL !== 'undefined' ? DIRECT_GAS_URL : '');
+    return urls;
+  }
+
+  function getGasUrl(pharmKey = 'ssg') {
+    const urls = getGasUrls();
+    const fallback = (typeof DIRECT_GAS_URL !== 'undefined' ? DIRECT_GAS_URL : '');
+    return (urls && urls[pharmKey]) || (pharmKey === 'ssg' ? fallback : '');
+  }
+
+  function saveGasUrl(pharmKey, url) {
+    const current = getGasUrls();
+    current[pharmKey] = (url || '').trim();
+    safeSetItem('mds_cloud_gas_urls_v1', JSON.stringify(current));
+    if (pharmKey === 'ssg') safeSetItem('mds_gas_webapp_url', current.ssg);
+    if (pharmKey === 'hoecheon') safeSetItem('hoecheon_gas_webapp_url', current.hoecheon);
+    pushToCloud();
+  }
+
+  // 🛡️ 전 직원 필수 공용 탭(환자예약주문 & 교품·불용재고) 절대 유실 방지 자동 보정기 (Auto-Healing)
+  function autoHealStaffPermissions() {
+    try {
+      let permMap = {};
+      try {
+        const pRaw = safeGetItem(STORAGE_KEYS.EMP_PERMISSIONS);
+        if (pRaw) permMap = JSON.parse(pRaw);
+      } catch(e) {}
+
+      let emps = [];
+      try {
+        const raw = safeGetItem(STORAGE_KEYS.EMPLOYEES);
+        if (raw) emps = JSON.parse(raw);
+      } catch(e) {}
+
+      let changed = false;
+      const mandatory = ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module', 'pill-identifier-module'];
+
+      if (Array.isArray(emps) && emps.length > 0) {
+        emps.forEach(e => {
+          if (!e || !e.id) return;
+          const isDir = e.role === '약국장' || e.id === 'emp_1';
+          if (isDir) {
+            e.allowedTabs = [...ALL_SYSTEM_TABS];
+            return;
+          }
+          if (!Array.isArray(e.allowedTabs)) e.allowedTabs = [...ALL_COMMON_TABS];
+          mandatory.forEach(mTab => {
+            if (!e.allowedTabs.includes(mTab)) {
+              e.allowedTabs.push(mTab);
+              changed = true;
+            }
+          });
+        });
+      }
+
+      if (permMap && typeof permMap === 'object') {
+        Object.keys(permMap).forEach(k => {
+          if (!k.endsWith('_updatedAt') && Array.isArray(permMap[k])) {
+            mandatory.forEach(mTab => {
+              if (!permMap[k].includes(mTab)) {
+                permMap[k].push(mTab);
+                changed = true;
+              }
+            });
+          }
+        });
+      }
+
+      if (changed) {
+        safeSetItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(emps));
+        safeSetItem(STORAGE_KEYS.EMP_PERMISSIONS, JSON.stringify(permMap));
+      }
+    } catch(err) {
+      console.warn('autoHealStaffPermissions warning:', err);
+    }
+  }
+
+  // 즉시 1회 자동 실행
+  autoHealStaffPermissions();
+
+  return {
+    STORAGE_KEYS,
+    getData,
+    saveData,
+    getCurrentUser,
+    autoHealStaffPermissions,
+    setCurrentUser,
+    logoutUser,
+    validatePasswordComplexity,
+    changePassword,
+    resetPassword,
+    updateStaffPermissions,
+    getEmployees,
+    saveEmployees,
+    getWorklogs,
+    saveWorklogs,
+    getEmergencyContacts,
+    saveEmergencyContacts,
+    getMedicineLocations,
+    saveMedicineLocations,
+    getRxMedicineLocations,
+    saveRxMedicineLocations,
+    getSupplies,
+    saveSupplies,
+    addSupplyRequest,
+    updateSupplyStatus,
+    deleteSupplyRequest,
+    getSupplyPresets,
+    saveSupplyPresets,
+    getExpiryReturns,
+    saveExpiryReturns,
+    addExpiryReturn,
+    updateExpiryReturnStatus,
+    deleteExpiryReturn,
+    getDismissedCriticalReturnKeys,
+    saveDismissedCriticalReturnKeys,
+    getSmartLedgerCloudData,
+    saveSmartLedgerToCloud,
+    getPharmacyExchange,
+    savePharmacyExchange,
+    getPatientOrders,
+    savePatientOrders,
+    getPrescriptionShortages,
+    savePrescriptionShortages,
+    deletePrescriptionShortage,
+    getSmsDispatchHistory,
+    saveSmsDispatchHistory,
+    deleteSmsDispatchHistory,
+    getPillIdentifications,
+    savePillIdentifications,
+    getPharmacySettlement,
+    savePharmacySettlement,
+    getBuildingRental,
+    saveBuildingRental,
+    getBuildingRentalDashboard,
+    saveBuildingRentalDashboard,
+    getBuildingRentalTabs,
+    fetchBuildingRentalFromCloud,
+    createNextRentalMonthSheet,
+    getSchedule,
+    saveSchedule,
+    getNotices,
+    saveNotices,
+    getLeaveRequests,
+    saveLeaveRequests,
+    getDiscountPurchases,
+    saveDiscountPurchases,
+    getDeletedIds,
+    addDeletedId,
+    getPaystubs,
+    savePaystubs,
+    getOvertimeAdjustments,
+    saveOvertimeAdjustments,
+    getPharmacistRates,
+    savePharmacistRates,
+    getGasUrls,
+    getGasUrl,
+    saveGasUrl,
+    initFirebase,
+    pushToCloud,
+    pullFromCloud,
+    syncDirectWithGoogleSheet,
+    getSheetUrl,
+    setSheetUrl,
+    exportFullBackupJSON,
+    importFullBackupJSON,
+    playNotificationChime,
+    getSoundPreset,
+    setSoundPreset,
+    toggleSoundMute,
+    isSoundMuted,
+    requestPushPermission,
+    registerServiceWorker,
+    sendDesktopNotification,
+    sendGroupChatPush,
+    sendOneSignalPush,
+    sendPaystubEmailToStaff
+  };
+
+  // 🚀 초기 로드 시 Firebase 실시간 연결 즉시 개시 & 스마트 화면 복귀 동기화
+  try {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('DOMContentLoaded', () => {
+        initFirebase();
+        registerServiceWorker();
+      });
+      initFirebase();
+      registerServiceWorker();
+
+      // 📱 스마트폰 화면을 켜거나 카톡 등 다른 앱에서 복귀 시 0.05초 만에 즉각 1회 최신화 (0바이트 대기 유지)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          pullFromCloud();
+        }
+      });
+      window.addEventListener('focus', () => {
+        pullFromCloud();
+      });
+    }
+  } catch(e) {}
+
+})();

@@ -1,0 +1,2827 @@
+/**
+ * 365메디스타약국 HR/OPS 플랫폼 메인 애플리케이션 코어 (App Main Controller)
+ * 10개 통합 모듈 사이드바 관리, 직원 개별 로그인, RBAC 권한 제어 및 10자리 복합 비밀번호 검증
+ */
+window.App = (function () {
+
+  let activeModule = 'notices';
+  let isDrawerOpen = false;
+
+  const MODULE_TITLES = {
+    'notices': '📢 공지사항 & 업무 SOP',
+    'worklog': '📝 약국 업무일지 & 인수인계',
+    'supplies': '📦 약국 소모품 관리 & 주문 시스템',
+    'patient-orders': '📋 환자 예약·미출 & 고객문자',
+    'medicine-location': '💊 일반약 위치 관리 & 위치 검색',
+    'rx-medicine-location': '💉 전문약(조제실) 위치 관리 & 위치 검색',
+    'pill-counter': '🔢 스마트 알약 카운터 & 조제 검수기',
+    'pill-identifier': '🔎 의약품 낱알 식별기 (식약처 API & AI)',
+    'pharmacy-exchange': '💊 인근약국 교품 & 불용재고 대장',
+    'expiry-returns': '⏳ 유효기간 & 제약사 반품 대장',
+    'schedule': '📅 월간 근무 스케줄',
+    'annual-leave': '🌴 연차대장 & 연차 전용 달력',
+    'discount-purchase': '🛍️ 직원할인구매대장',
+    'rules': '📜 365메디스타약국 취업규칙 전문 열람',
+    'emergency-contacts': '☎️ 약국 운영 지원 연락망 센터',
+    'approval': '🔐 약국장 결재 & 인사승인 센터 (약국장 전용)',
+    'staff-directory': '👤 약국 직원 명부 (약국장 전용)',
+    'ssg-settlement': '💊 365메디스타약국 스마트장부 (약국장 전용)',
+    'building-rental': '🏢 건물 임대업 대시보드 (약국장 전용)'
+  };
+
+  const MODULE_ICONS = {
+    'notices': 'fa-bullhorn',
+    'worklog': 'fa-pen-fancy',
+    'supplies': 'fa-boxes-stacked',
+    'patient-orders': 'fa-clipboard-list',
+    'medicine-location': 'fa-boxes-packing',
+    'rx-medicine-location': 'fa-pills',
+    'pill-counter': 'fa-calculator',
+    'pill-identifier': 'fa-capsules',
+    'pharmacy-exchange': 'fa-handshake',
+    'expiry-returns': 'fa-hourglass-half',
+    'schedule': 'fa-calendar-alt',
+    'annual-leave': 'fa-umbrella-beach',
+    'discount-purchase': 'fa-shopping-bag',
+    'rules': 'fa-book-medical',
+    'emergency-contacts': 'fa-phone-alt',
+    'approval': 'fa-user-check',
+    'staff-directory': 'fa-address-book',
+    'ssg-settlement': 'fa-coins',
+    'building-rental': 'fa-building'
+  };
+
+  // 🛡️ 저작권 검증기 (본문 렌더링 무사통과 안전 가드 적용)
+  function verifyCopyrightIntegrity() {
+    try {
+      const guard = document.getElementById('msd-copyright-guard');
+      if (!guard) return; // 푸터 DOM 생성 전이면 통과
+    } catch (e) {}
+  }
+
+  function triggerTamperLockdown() {
+    document.body.innerHTML = `
+      <div style="position:fixed; inset:0; background:#090d16; color:#ef4444; z-index:999999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px; text-align:center; font-family:sans-serif;">
+        <div style="width:80px; height:80px; border-radius:24px; background:rgba(239,68,68,0.15); border:2px solid #ef4444; display:flex; align-items:center; justify-content:center; font-size:36px; margin-bottom:20px; box-shadow:0 0 30px rgba(239,68,68,0.4);">🔒</div>
+        <h1 style="font-size:24px; font-weight:900; color:#ffffff; margin-bottom:12px; letter-spacing:-0.5px;">SYSTEM SECURITY TAMPER LOCKDOWN</h1>
+        <p style="font-size:14px; color:#94a3b8; max-width:500px; line-height:1.6; margin-bottom:24px;">
+          본 약국 시스템의 <b>개발자 저작권 서명(Crafted with MSD)</b>이 훼손되거나 무단 변경되었습니다.<br>
+          시스템 보안 정책에 의해 애플리케이션 가동이 <b>즉시 전면 중단</b>되었습니다.
+        </p>
+        <div style="background:#1e1b4b; border:1px solid #6366f1; color:#c7d2fe; padding:12px 20px; border-radius:12px; font-size:12px; font-weight:bold;">
+          🛡️ License Violation Detected: MSD System Integrity Check Failed (ERR_MSD_SIGNATURE_TAMPERED)
+        </div>
+      </div>
+    `;
+    throw new Error("System Security Lockdown: Copyright signature tampered!");
+  }
+
+  function init() {
+    verifyCopyrightIntegrity();
+    loadSavedTheme();
+    setupEventListeners();
+    updateSheetSyncBadge();
+    
+    // 유저 세션 및 사이드바 권한 렌더링
+    renderSidebarNavigation();
+    renderUserHeader();
+    renderQuickLoginButtons();
+
+    // 저작권 요소 실시간 동적 훼손 감지 관찰기 (MutationObserver)
+    try {
+      const guard = document.getElementById('msd-copyright-guard');
+      if (guard && window.MutationObserver) {
+        const observer = new MutationObserver(verifyCopyrightIntegrity);
+        observer.observe(guard, { childList: true, characterData: true, subtree: true, attributes: true });
+      }
+    } catch(e) {}
+
+    // 핸드폰/스마트폰 및 PC 접속 시 드로어 메뉴 가동
+    openDrawer();
+
+    // 📌 최초 접속 시 자동 읽음으로 N 뱃지가 씹히던 현상 원천 방지 (실제 탭 클릭 시에만 읽음 처리)
+
+    renderActiveModule();
+
+    // ⚡ 앱 기동 즉시 클라우드 최신 데이터 동기화 & 스마트폰 홈 화면 배지 0.01초 최신화
+    updateSidebarBadgesOnly();
+    if (window.SheetsSync && typeof window.SheetsSync.pullFromCloud === 'function') {
+      window.SheetsSync.pullFromCloud();
+    }
+
+    // 🚀 [Option A] 자동 버전 감지 및 스마트 무중단 자동 업데이트 가동
+    startAutoUpdateChecker();
+  }
+
+  let lastBackPressTime = 0;
+
+  function closeAllOpenModalsAndDrawers() {
+    let handled = false;
+
+    // 1. 사이드바(드로어)가 열려있으면 닫기
+    const sidebar = document.getElementById('app-drawer');
+    if (sidebar && sidebar.classList.contains('open')) {
+      closeDrawer();
+      handled = true;
+    }
+
+    // 2. 전역 모달 창들 닫기
+    const modals = document.querySelectorAll('.modal-overlay');
+    modals.forEach(m => {
+      const disp = window.getComputedStyle(m).display;
+      if (disp !== 'none' && disp !== '') {
+        m.style.display = 'none';
+        handled = true;
+      }
+    });
+
+    closeSheetModal();
+    closeEmpModal();
+    closeLeaveModal();
+    closeDateDetailModal();
+    closeDiscountModal();
+    closeChangePwModal();
+    if (window.NoticesModule && typeof window.NoticesModule.closeModal === 'function') window.NoticesModule.closeModal();
+    if (window.ScheduleModule && typeof window.ScheduleModule.closeShiftModal === 'function') window.ScheduleModule.closeShiftModal();
+    if (window.WorklogModule && typeof window.WorklogModule.closeModal === 'function') window.WorklogModule.closeModal();
+    if (window.DiscountPurchaseModule && typeof window.DiscountPurchaseModule.closeModal === 'function') window.DiscountPurchaseModule.closeModal();
+    const pModal = document.getElementById('property-crud-modal');
+    if (pModal && pModal.style.display !== 'none') {
+      pModal.style.display = 'none';
+      handled = true;
+    }
+
+    return handled;
+  }
+
+  function showExitToast() {
+    let toast = document.getElementById('ssg-exit-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'ssg-exit-toast';
+      toast.style.cssText = 'position:fixed; bottom:36px; left:50%; transform:translateX(-50%); background:rgba(15,23,42,0.92); color:#ffffff; padding:11px 22px; border-radius:24px; font-size:13.5px; font-weight:700; z-index:9999999; box-shadow:0 6px 20px rgba(0,0,0,0.35); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,0.15); transition:opacity 0.25s ease; opacity:0; pointer-events:none; white-space:nowrap;';
+      toast.innerText = '뒤로가기 버튼을 한 번 더 누르면 앱이 닫힙니다.';
+      document.body.appendChild(toast);
+    }
+    toast.style.opacity = '1';
+    setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 2000);
+  }
+
+  function setupSmartBackKey() {
+    try {
+      if (window.history && window.history.pushState) {
+        window.history.pushState({ appRoot: true }, '');
+      }
+    } catch(e) {}
+
+    window.addEventListener('popstate', (e) => {
+      const closed = closeAllOpenModalsAndDrawers();
+      if (closed) {
+        if (window.history && window.history.pushState) {
+          window.history.pushState({ appRoot: true }, '');
+        }
+        return;
+      }
+
+      // 메인 화면에서 2초 이내 연속 2회 뒤로가기 누를 시 깔끔하게 종료
+      const now = Date.now();
+      if (now - lastBackPressTime < 2000) {
+        try {
+          window.close();
+        } catch(err) {}
+      } else {
+        lastBackPressTime = now;
+        showExitToast();
+        if (window.history && window.history.pushState) {
+          window.history.pushState({ appRoot: true }, '');
+        }
+      }
+    });
+  }
+
+  function setupEventListeners() {
+    setupSmartBackKey();
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeAllOpenModalsAndDrawers();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 900) {
+        openDrawer();
+      }
+    });
+
+    // 1. 기존에 추가했던 '바깥 어두운 배경(오버레이)' 터치 시 닫기
+    const overlay = document.getElementById('drawer-overlay');
+    if (overlay) {
+      overlay.addEventListener('click', () => {
+        if (window.innerWidth <= 900) {
+          closeDrawer();
+        }
+      });
+    }
+
+    // 2. 사이드바 내부의 빈 공간 터치 시 닫기
+    const drawer = document.getElementById('app-drawer');
+    if (drawer) {
+      drawer.addEventListener('click', (e) => {
+        if (window.innerWidth <= 900) {
+          const isButtonOrFooter = e.target.closest('button') || e.target.closest('.drawer-footer');
+          if (!isButtonOrFooter) {
+            closeDrawer();
+          }
+        }
+      });
+    }
+  }
+
+  // ─── 공지 읽음 상태 관리 헬퍼 ───────────────────────────────────────────
+  // 각 글의 "지문": id + 마지막수정시각 + 제목/내용 스냅샷
+  function _noticeFingerprint(n) {
+    return [n.id || '', n.updatedAt || n.date || '', (n.title || n.text || n.content || '').slice(0, 30)].join('|');
+  }
+
+  function markNoticesRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const data = window.SheetsSync.getData();
+    const notices = data.notices || [];
+    const fingerprints = notices.map(_noticeFingerprint);
+    try {
+      localStorage.setItem('mds_read_notices_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadNotices(currUser, notices) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_notices_' + currUser.id);
+      if (!raw) return notices.length > 0;
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return notices.some(n => !savedSet.has(_noticeFingerprint(n)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 업무일지 읽음 상태 관리 헬퍼 ─────────────────────────────────────────
+  // 지문: id + 상태(PENDING/COMPLETED 등) + checkedBy(확인자목록) + 내용변경
+  function _worklogFingerprint(w) {
+    if (!w) return '';
+    const checked = Array.isArray(w.checkedBy) ? w.checkedBy.join(',') : String(w.checkedBy || '');
+    return [w.id || '', w.status || '', checked, (w.content || w.text || '').slice(0, 30), w.updatedAt || w.createdAt || ''].join('|');
+  }
+
+  function markWorklogRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const rawWorklogs = (window.SheetsSync.getWorklogs ? window.SheetsSync.getWorklogs() : (window.SheetsSync.getData().worklogs || [])) || [];
+    const worklogs = Array.isArray(rawWorklogs) ? rawWorklogs.filter(Boolean) : [];
+    const fingerprints = worklogs.map(_worklogFingerprint);
+    try {
+      localStorage.setItem('mds_read_worklog_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadWorklog(currUser, worklogs) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_worklog_' + currUser.id);
+      if (!raw) return worklogs.length > 0;
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return worklogs.some(w => !savedSet.has(_worklogFingerprint(w)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 일반약 보관 위치 읽음 상태 관리 헬퍼 ────────────────────────────────
+  function _medicineLocationFingerprint(item) {
+    if (!item) return '';
+    return [item.id || '', item.updatedAt || '', item.locationDetail || '', (item.history ? item.history.length : 0)].join('|');
+  }
+
+  function markMedicineLocationRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const items = (window.SheetsSync.getMedicineLocations ? window.SheetsSync.getMedicineLocations() : (window.SheetsSync.getData().medicineLocations || [])) || [];
+    const fingerprints = items.map(_medicineLocationFingerprint);
+    try {
+      localStorage.setItem('mds_read_med_loc_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadMedicineLocations(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_med_loc_' + currUser.id);
+      if (!raw) return items.length > 0;
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return items.some(item => !savedSet.has(_medicineLocationFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 전문약(조제실) 보관 위치 읽음 상태 관리 헬퍼 ──────────────────────────
+  function _rxMedicineLocationFingerprint(item) {
+    if (!item) return '';
+    return [item.id || '', item.updatedAt || '', item.locationDetail || '', item.adjustmentReason || '', (item.history ? item.history.length : 0)].join('|');
+  }
+
+  function markRxMedicineLocationRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const items = (window.SheetsSync.getRxMedicineLocations ? window.SheetsSync.getRxMedicineLocations() : (window.SheetsSync.getData().rxMedicineLocations || [])) || [];
+    const fingerprints = items.map(_rxMedicineLocationFingerprint);
+    try {
+      localStorage.setItem('mds_read_rx_med_loc_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadRxMedicineLocations(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_rx_med_loc_' + currUser.id);
+      if (!raw) return items.length > 0;
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return items.some(item => !savedSet.has(_rxMedicineLocationFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 🔢 스마트 알약 카운터 읽음 상태 관리 헬퍼 ─────────────────────────────
+  function _pillCounterFingerprint(item) {
+    if (!item) return '';
+    return [
+      item.id || '',
+      item.createdAt || '',
+      item.totalCount || 0,
+      item.patientName || '',
+      item.drugName || ''
+    ].join('|');
+  }
+
+  function markPillCounterRead() {
+    const currUser = window.SheetsSync ? window.SheetsSync.getCurrentUser() : null;
+    if (!currUser) return;
+    try {
+      const rawHistory = localStorage.getItem('mds_pill_counter_history_v1');
+      const items = rawHistory ? JSON.parse(rawHistory) : [];
+      const fingerprints = (Array.isArray(items) ? items : []).map(_pillCounterFingerprint);
+      localStorage.setItem('mds_read_pill_counter_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadPillCounter(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_pill_counter_' + currUser.id);
+      if (raw === null) {
+        // 앱 재실행/최초 세션 시 억지 N 방어: 현재 상태를 초기 기준점으로 등록
+        if (!items || items.length === 0) return false;
+        const fingerprints = (items || []).map(_pillCounterFingerprint);
+        localStorage.setItem('mds_read_pill_counter_' + currUser.id, JSON.stringify(fingerprints));
+        return false;
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return (items || []).some(item => !savedSet.has(_pillCounterFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 🔎 의약품 낱알 식별기 읽음 상태 관리 헬퍼 (인메모리 운용 — localStorage 0 Byte) ───
+  const inMemoryReadPillIdentifierMap = {};
+  function _pillIdentifierFingerprint(item) {
+    if (!item) return '';
+    return [
+      item.id || '',
+      item.createdAt || '',
+      item.itemSeq || '',
+      item.itemName || '',
+      item.customerNote || ''
+    ].join('|');
+  }
+
+  function markPillIdentifierRead() {
+    const currUser = window.SheetsSync ? window.SheetsSync.getCurrentUser() : null;
+    if (!currUser) return;
+    try {
+      try { localStorage.removeItem('mds_read_pill_identifier_' + currUser.id); } catch(e) {}
+      const items = (window.SheetsSync && typeof window.SheetsSync.getPillIdentifications === 'function')
+        ? (window.SheetsSync.getPillIdentifications() || [])
+        : [];
+      const fingerprints = (Array.isArray(items) ? items : []).map(_pillIdentifierFingerprint);
+      inMemoryReadPillIdentifierMap[currUser.id] = fingerprints;
+    } catch(e) {}
+  }
+
+  function _hasUnreadPillIdentifier(currUser, items) {
+    if (!currUser) return false;
+    try {
+      try { localStorage.removeItem('mds_read_pill_identifier_' + currUser.id); } catch(e) {}
+      const savedFPs = inMemoryReadPillIdentifierMap[currUser.id];
+      if (!savedFPs) {
+        if (!items || items.length === 0) return false;
+        inMemoryReadPillIdentifierMap[currUser.id] = (items || []).map(_pillIdentifierFingerprint);
+        return false;
+      }
+      const savedSet = new Set(savedFPs);
+      return (items || []).some(item => !savedSet.has(_pillIdentifierFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── ⏳ 유효기간 & 제약사 반품 대장 읽음 상태 관리 헬퍼 ────────────────────────
+  function _expiryReturnFingerprint(item) {
+    if (!item) return '';
+    return [
+      item.id || '',
+      item.updatedAt || '',
+      item.status || '',
+      item.vendor || '',
+      item.qty || '',
+      item.costPrice || '',
+      item.actualSettledAmount || '',
+      item.expiryDate || '',
+      Array.isArray(item.photos) ? item.photos.length : 0
+    ].join('|');
+  }
+
+  function markExpiryReturnsRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const items = (window.SheetsSync.getExpiryReturns ? window.SheetsSync.getExpiryReturns() : []) || [];
+    const fingerprints = items.map(_expiryReturnFingerprint);
+    try {
+      localStorage.setItem('mds_read_expiry_ret_' + currUser.id, JSON.stringify(fingerprints));
+      if (window.DailyBriefingWidget && typeof window.DailyBriefingWidget.dismissCriticalBanner === 'function') window.DailyBriefingWidget.dismissCriticalBanner();
+    } catch(e) {}
+    updateSidebarBadgesOnly();
+  }
+
+  function _hasUnreadExpiryReturns(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_expiry_ret_' + currUser.id);
+      if (raw === null) {
+        const fingerprints = (items || []).map(_expiryReturnFingerprint);
+        localStorage.setItem('mds_read_expiry_ret_' + currUser.id, JSON.stringify(fingerprints));
+        return false; // 📌 앱 재실행/최초 세션 시 억지 N 방어 후 기준점 세팅 (규칙 73)
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return items.some(item => !savedSet.has(_expiryReturnFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 인근약국 교품 & 불용재고 읽음 상태 관리 헬퍼 ─────────────────────────────
+  function _pharmacyExchangeFingerprint(item) {
+    if (!item) return '';
+    const dateClean = String(item.updatedAt || item.createdAt || '').trim();
+    return [item.id || '', dateClean, item.status || '', item.drugName || '', item.quantity || ''].join('|');
+  }
+
+  function markPharmacyExchangeRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const peData = (window.SheetsSync.getPharmacyExchange ? window.SheetsSync.getPharmacyExchange() : (window.SheetsSync.getData().pharmacyExchange || { exchanges: [], deadStocks: [] })) || { exchanges: [], deadStocks: [] };
+    const allItems = [...(peData.exchanges || []), ...(peData.deadStocks || [])];
+    const fingerprints = allItems.map(_pharmacyExchangeFingerprint);
+    try {
+      localStorage.setItem('mds_read_pharmacy_ex_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadPharmacyExchange(currUser, peData) {
+    if (!currUser) return false;
+    try {
+      const allItems = [...(peData.exchanges || []), ...(peData.deadStocks || [])];
+      const raw = localStorage.getItem('mds_read_pharmacy_ex_' + currUser.id);
+      if (raw === null) {
+        const fingerprints = allItems.map(_pharmacyExchangeFingerprint);
+        localStorage.setItem('mds_read_pharmacy_ex_' + currUser.id, JSON.stringify(fingerprints));
+        return false;
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return allItems.some(item => !savedSet.has(_pharmacyExchangeFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 환자 예약 주문 & 선결제 / 처방약 미출약 관리 읽음 상태 관리 헬퍼 ────────────────
+  function _patientOrderFingerprint(item) {
+    if (!item) return '';
+    const dateClean = String(item.updatedAt || item.createdAt || '').trim();
+    return [item.id || '', dateClean, item.status || '', item.paymentStatus || '', item.patientName || item.customerName || '', item.drugName || item.drugsSummary || ''].join('|');
+  }
+
+  function markPatientOrdersRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const orders = (window.SheetsSync.getPatientOrders ? window.SheetsSync.getPatientOrders() : (window.SheetsSync.getData().patientOrders || [])) || [];
+    const rxShortages = (window.SheetsSync.getPrescriptionShortages ? window.SheetsSync.getPrescriptionShortages() : (window.SheetsSync.getData().prescriptionShortages || [])) || [];
+    const fingerprints = [...orders, ...rxShortages].map(_patientOrderFingerprint);
+    try {
+      localStorage.setItem('mds_read_patient_orders_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadPatientOrders(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_patient_orders_' + currUser.id);
+      if (raw === null) {
+        const fingerprints = (items || []).map(_patientOrderFingerprint);
+        localStorage.setItem('mds_read_patient_orders_' + currUser.id, JSON.stringify(fingerprints));
+        return false;
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return (items || []).some(item => !savedSet.has(_patientOrderFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 직원할인구매대장 읽음 상태 관리 헬퍼 ─────────────────────────────────────
+  function _discountPurchaseFingerprint(item) {
+    if (!item) return '';
+    const isPaidClean = (item.isPaid === true || item.isPaid === 'TRUE' || item.isPaid === 1 || item.isPaid === '1') ? '1' : '0';
+    const isCrossClean = (item.isCrossChecked === true || item.isCrossChecked === 'TRUE' || item.isCrossChecked === 1 || item.isCrossChecked === '1') ? '1' : '0';
+    const dateClean = String(item.updatedAt || item.dateStr || item.createdAt || '').trim();
+    return [item.id || '', dateClean, isPaidClean, isCrossClean, item.itemName || '', Number(item.totalPrice) || 0].join('|');
+  }
+
+  function markDiscountPurchaseRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const purchases = (window.SheetsSync.getDiscountPurchases ? window.SheetsSync.getDiscountPurchases() : (window.SheetsSync.getData().discountPurchases || [])) || [];
+    const fingerprints = purchases.map(_discountPurchaseFingerprint);
+    try {
+      localStorage.setItem('mds_read_discount_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadDiscountPurchase(currUser, purchases) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_discount_' + currUser.id);
+      if (raw === null) {
+        const fingerprints = (purchases || []).map(_discountPurchaseFingerprint);
+        localStorage.setItem('mds_read_discount_' + currUser.id, JSON.stringify(fingerprints));
+        return false; // 📌 최초 세션 기준점 자동 등록 후 이후 신규 등록/수정 시 즉시 N 표시
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return (purchases || []).some(item => !savedSet.has(_discountPurchaseFingerprint(item)));
+    } catch(e) { return false; }
+  }
+
+  // ─── 약국장 결재 읽음 상태 관리 헬퍼 ─────────────────────────────────────
+  // 결재 대상 전체(연차, 할인구매, 미확인업무일지, 미승인스케줄)의 지문 합산
+  function _approvalFingerprint(data) {
+    const leaves = (data.leaveRequests || []).filter(l => l.status === 'PENDING').map(l => l.id + '|' + l.status);
+    const discounts = (data.discountPurchases || []).filter(p => !p.isPaid).map(p => p.id + '|' + p.isPaid);
+    const worklogs = (data.worklogs || []).filter(w => w.status === 'PENDING').map(w => w.id + '|' + w.status);
+    return [...leaves, ...discounts, ...worklogs].join(';;');
+  }
+
+  function markApprovalRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const data = window.SheetsSync.getData();
+    const fp = _approvalFingerprint(data);
+    try {
+      localStorage.setItem('mds_read_approval_' + currUser.id, fp);
+    } catch(e) {}
+  }
+
+  function _hasUnreadApproval(currUser, data) {
+    if (!currUser) return false;
+    try {
+      const saved = localStorage.getItem('mds_read_approval_' + currUser.id);
+      const current = _approvalFingerprint(data);
+      if (saved === null) {
+        localStorage.setItem('mds_read_approval_' + currUser.id, current);
+        return false; // 최초 접속 시 기준점 저장 후 이후 변동 시 N 표시
+      }
+      return saved !== current;
+    } catch(e) { return false; }
+  }
+
+  // ─── 📦 약국 소모품 관리 읽음 상태 관리 헬퍼 ─────────────────────────────────────
+  function _supplyFingerprint(item) {
+    if (!item) return '';
+    return [
+      item.id || '',
+      item.updatedAt || '',
+      item.status || '',
+      item.itemName || '',
+      item.qty || '',
+      item.unit || '',
+      item.vendor || '',
+      item.actualPrice || item.estimatedPrice || '',
+      item.storageLocation || '', item.memo || '', item.urgency || '',
+      Array.isArray(item.photos) ? item.photos.length : (item.photoUrl ? 1 : 0)
+    ].join('|');
+  }
+
+  function markSuppliesRead() {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+    const supplies = (window.SheetsSync.getSupplies ? window.SheetsSync.getSupplies() : (window.SheetsSync.getData().supplies || [])) || [];
+    const fingerprints = supplies.map(_supplyFingerprint);
+    try {
+      localStorage.setItem('mds_read_supplies_' + currUser.id, JSON.stringify(fingerprints));
+    } catch(e) {}
+  }
+
+  function _hasUnreadSupplies(currUser, items) {
+    if (!currUser) return false;
+    try {
+      const raw = localStorage.getItem('mds_read_supplies_' + currUser.id);
+      if (raw === null) {
+        const fingerprints = (items || []).map(_supplyFingerprint);
+        localStorage.setItem('mds_read_supplies_' + currUser.id, JSON.stringify(fingerprints));
+        return false;
+      }
+      const savedFPs = JSON.parse(raw);
+      const savedSet = new Set(savedFPs);
+      return (items || []).some(item => !savedSet.has(_supplyFingerprint(item)));
+    } catch(e) { return false; }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function computeNotificationBadges() {
+    try {
+      const data = window.SheetsSync.getData();
+      const currUser = window.SheetsSync.getCurrentUser();
+      const isDirector = currUser && currUser.role === '약국장';
+
+      // 1. 공지사항 (notices): 새 글, 수정글이 있을 때만 N
+      const notices = data.notices || [];
+      const hasNewNotice = _hasUnreadNotices(currUser, notices);
+
+      // 2. 업무일지 (worklogs): 새 작성, 인계 확인, 상태 변경(수정)이 발생했을 때만 N / 수량
+      const worklogs = (window.SheetsSync.getWorklogs ? window.SheetsSync.getWorklogs() : data.worklogs) || [];
+      const hasUnreadLog = _hasUnreadWorklog(currUser, worklogs);
+
+      // 3. 일반약 위치 관리 (medicine-location): 새 약품 위치 추가, 변경 시 N
+      const medLocations = (window.SheetsSync.getMedicineLocations ? window.SheetsSync.getMedicineLocations() : data.medicineLocations) || [];
+      const hasUnreadMedLoc = _hasUnreadMedicineLocations(currUser, medLocations);
+
+      // 3-2. 전문약(조제실) 위치 관리 (rx-medicine-location): 새 전문약 추가, 변경 시 N
+      const rxMedLocations = (window.SheetsSync.getRxMedicineLocations ? window.SheetsSync.getRxMedicineLocations() : data.rxMedicineLocations) || [];
+      const hasUnreadRxMedLoc = _hasUnreadRxMedicineLocations(currUser, rxMedLocations);
+
+      // 4. 월간 근무 스케줄 (schedule)
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+      const scheduleStatus = data.scheduleStatus || {};
+      const stObj = scheduleStatus[monthKey] || {};
+      const hasDirectorComment = !!(stObj.directorComment && !stObj.directorApproved);
+      
+      // 약국장 접속 시: 직원이 스케줄을 변경하여 제출(SUBMITTED)한 미승인 건이 있으면 N 뱃지 표시
+      const employees = data.employees || [];
+      const hasSubmittedSchedules = isDirector && employees.some(e => e.role !== '약국장' && stObj[e.id] === 'SUBMITTED');
+
+      const pendingLeaves = (data.leaveRequests || []).filter(l => l.status === 'PENDING');
+      const discountPurchases = (window.SheetsSync.getDiscountPurchases ? window.SheetsSync.getDiscountPurchases() : data.discountPurchases) || [];
+      const unpaidPurchases = discountPurchases.filter(p => !p.isPaid);
+      const hasUnreadDiscount = _hasUnreadDiscountPurchase(currUser, discountPurchases);
+
+      const hasUnreadApproval = _hasUnreadApproval(currUser, data);
+
+      const suppliesList = (window.SheetsSync.getSupplies ? window.SheetsSync.getSupplies() : data.supplies) || [];
+      const pendingSupplies = suppliesList.filter(s => s.status === 'PENDING');
+      const hasUnreadSupplies = _hasUnreadSupplies(currUser, suppliesList);
+
+      // ⏳ 유효기간 & 제약사 반품 대장 (3단계 조기경보: D-30 초긴급/만료 건수 숫자 뱃지, 미확인 시 N 뱃지)
+      const expiryReturnsList = (window.SheetsSync.getExpiryReturns ? window.SheetsSync.getExpiryReturns() : data.expiryReturns) || [];
+      const hasUnreadExpiryReturns = _hasUnreadExpiryReturns(currUser, expiryReturnsList);
+      const activeExpiryList = expiryReturnsList.filter(r => !r.status || r.status === 'PENDING_RETURN');
+      const nowTime = Date.now();
+      const criticalExpiryList = activeExpiryList.filter(r => {
+        if (!r.expiryDate) return false;
+        const clean = String(r.expiryDate).trim().replace(/\./g, '-').replace(/\//g, '-');
+        let target;
+        if (/^\d{4}-\d{2}$/.test(clean)) {
+          const parts = clean.split('-');
+          target = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 23, 59, 59);
+        } else {
+          target = new Date(clean + 'T23:59:59');
+        }
+        if (isNaN(target.getTime())) return false;
+        const diffDays = Math.ceil((target.getTime() - nowTime) / (1000 * 60 * 60 * 24));
+        return diffDays <= 30;
+      });
+
+      // 💊 인근약국 교품 & 불용재고 대장 (pharmacy-exchange: 미정산 교품 건수 또는 신규/변동 시 N 뱃지)
+      const peData = (window.SheetsSync.getPharmacyExchange ? window.SheetsSync.getPharmacyExchange() : (data.pharmacyExchange || { exchanges: [], deadStocks: [] })) || { exchanges: [], deadStocks: [] };
+      const pendingExchanges = (peData.exchanges || []).filter(e => e.status !== 'SETTLED_RETURN' && e.status !== 'SETTLED_MONEY');
+      const hasUnreadPE = _hasUnreadPharmacyExchange(currUser, peData);
+
+      // 📋 환자 예약 주문 & 선결제 / 처방약 미출약 관리 (patient-orders: 미수령 입고약/미출약 건수 또는 신규/변동 시 N 뱃지)
+      const patientOrdersList = (window.SheetsSync.getPatientOrders ? window.SheetsSync.getPatientOrders() : (data.patientOrders || [])) || [];
+      const pendingPatientOrders = patientOrdersList.filter(o => o.status === 'ARRIVED' || o.status === 'PENDING_ORDER');
+      const rxShortagesList = (window.SheetsSync.getPrescriptionShortages ? window.SheetsSync.getPrescriptionShortages() : (data.prescriptionShortages || [])) || [];
+      const isOrderOrShortageCompleted = (st) => { const s = String(st || '').trim(); return s === 'COMPLETED' || s === '5. 수령 완료' || s === '수령완료'; };
+      const pendingRxShortages = rxShortagesList.filter(s => s && !isOrderOrShortageCompleted(s.status));
+      const totalPendingOrdersAndShortages = pendingPatientOrders.length + pendingRxShortages.length;
+      const hasUnreadPatientOrders = _hasUnreadPatientOrders(currUser, [...patientOrdersList, ...rxShortagesList]);
+
+      // 🔢 스마트 알약 카운터 (pill-counter: 신규 검수 기록 저장 시 N 뱃지)
+      let pillCounterHistory = [];
+      try {
+        const rawHistory = localStorage.getItem('mds_pill_counter_history_v1');
+        if (rawHistory) pillCounterHistory = JSON.parse(rawHistory);
+      } catch(e) {}
+      const hasUnreadPillCounter = _hasUnreadPillCounter(currUser, pillCounterHistory);
+      const pillIdHistory = (window.SheetsSync && typeof window.SheetsSync.getPillIdentifications === 'function') ? (window.SheetsSync.getPillIdentifications() || []) : (data.pillIdentifications || []);
+      const hasUnreadPillIdentifier = _hasUnreadPillIdentifier(currUser, pillIdHistory);
+
+      return {
+        notices: hasNewNotice ? 'N' : null,
+        worklog: hasUnreadLog ? 'N' : null,
+        supplies: pendingSupplies.length > 0 ? pendingSupplies.length : (hasUnreadSupplies ? 'N' : null),
+        'patient-orders': totalPendingOrdersAndShortages > 0 ? totalPendingOrdersAndShortages : (hasUnreadPatientOrders ? 'N' : null),
+        'medicine-location': hasUnreadMedLoc ? 'N' : null,
+        'rx-medicine-location': hasUnreadRxMedLoc ? 'N' : null,
+        'pill-counter': hasUnreadPillCounter ? 'N' : null,
+        'pill-identifier': hasUnreadPillIdentifier ? 'N' : null,
+        'pharmacy-exchange': pendingExchanges.length > 0 ? pendingExchanges.length : (hasUnreadPE ? 'N' : null),
+        'expiry-returns': criticalExpiryList.length > 0 ? criticalExpiryList.length : (hasUnreadExpiryReturns ? 'N' : null),
+        schedule: hasDirectorComment ? '!' : (isDirector && hasSubmittedSchedules ? 'N' : null),
+        annualLeave: pendingLeaves.length > 0 ? pendingLeaves.length : null,
+        'annual-leave': pendingLeaves.length > 0 ? pendingLeaves.length : null,
+        discountPurchase: hasUnreadDiscount ? 'N' : null,
+        'discount-purchase': hasUnreadDiscount ? 'N' : null,
+        approval: hasUnreadApproval ? 'N' : null
+      };
+    } catch(e) {
+      return {};
+    }
+  }
+
+  function updateSidebarBadgesOnly() {
+    try {
+      const badges = computeNotificationBadges();
+      let unreadCount = 0;
+      document.querySelectorAll('.menu-item').forEach(btn => {
+        const mod = btn.getAttribute('data-module');
+        const badgeEl = btn.querySelector('.menu-item-badge');
+        const val = badges[mod];
+        if (val) {
+          unreadCount++;
+          if (badgeEl) {
+            badgeEl.textContent = val;
+          } else {
+            const iconWrapper = btn.querySelector('.menu-icon-wrapper');
+            if (iconWrapper) {
+              const span = document.createElement('span');
+              span.className = 'menu-item-badge' + (val === '!' ? ' badge-amber' : '');
+              span.textContent = val;
+              iconWrapper.appendChild(span);
+            }
+          }
+        } else {
+          if (badgeEl) badgeEl.remove();
+        }
+      });
+
+      // 📱 카카오톡 스타일 스마트폰 홈 화면 앱 아이콘 N / 숫자 배지 연동 (Web App Badging API)
+      updateAppIconBadge(unreadCount);
+    } catch(e) {}
+  }
+
+  function updateAppIconBadge(count) {
+    try {
+      const cnt = Number(count) || 0;
+      if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+        if (cnt > 0) {
+          navigator.setAppBadge(cnt).catch(() => {});
+        } else {
+          if ('clearAppBadge' in navigator) {
+            navigator.clearAppBadge().catch(() => {});
+          }
+        }
+      }
+
+      // 📱 서비스 워커(Service Worker) 백그라운드 엔진에도 배지 세팅 신호 전파
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SET_BADGE', count: cnt });
+      }
+    } catch(e) {}
+  }
+
+  function renderSidebarNavigation() {
+    const nav = document.querySelector('.drawer-menu');
+    const drawer = document.getElementById('app-drawer');
+    const mainWrapper = document.getElementById('main-wrapper');
+    const topHeader = document.querySelector('.top-header');
+
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) {
+      if (drawer) drawer.style.display = 'none';
+      if (mainWrapper) mainWrapper.classList.add('full-width');
+      if (topHeader) topHeader.style.display = 'none';
+      if (nav) nav.innerHTML = '';
+      return;
+    } else {
+      if (drawer) drawer.style.display = '';
+      if (mainWrapper) mainWrapper.classList.remove('full-width');
+      if (topHeader) topHeader.style.display = '';
+    }
+
+    if (!nav) return;
+
+    const isDirector = currUser.role === '약국장' || currUser.id === 'emp_1';
+    const badges = computeNotificationBadges();
+
+    // 맞춤 허용 탭 목록 (개인별 권한) - 약국장 수동 설정 100% 보존
+    let allowed = Array.isArray(currUser.allowedTabs) ? [...currUser.allowedTabs] : [
+      'notices-module', 'worklog-module', 'supplies-module', 'patient-orders-module', 'medicine-location-module', 'rx-medicine-location-module', 'pill-counter-module',
+      'pharmacy-exchange-module', 'expiry-returns-module', 'schedule-module', 'annual-leave-module', 'discount-purchase-module', 'rules-module', 'emergency-contacts-module'
+    ];
+    // 🛡️ 전 직원 필수 공용 탭 강제 보존 (환자예약주문 & 교품불용재고 절대 유실 방지)
+    ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module', 'pill-identifier-module'].forEach(mTab => {
+      if (!allowed.includes(mTab)) allowed.push(mTab);
+    });
+
+    let html = '';
+
+    // ==========================================
+    // Group 1: 📦 약국 현장 업무
+    // ==========================================
+    html += `
+      <div style="padding:10px 16px 4px 16px; font-size:11px; font-weight:800; color:#059669; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:5px;">
+        <i class="fas fa-cubes"></i> <span>약국 현장 업무</span>
+      </div>
+    `;
+
+    if (isDirector || allowed.includes('notices-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'notices' ? 'active' : ''}" data-module="notices" onclick="App.switchModule('notices', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-bullhorn text-primary"></i>
+            ${badges.notices ? `<span class="menu-item-badge">${badges.notices}</span>` : ''}
+          </div>
+          <span>공지사항 & 업무 SOP</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('worklog-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'worklog' ? 'active' : ''}" data-module="worklog" onclick="App.switchModule('worklog', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-pen-fancy text-primary"></i>
+            ${badges.worklog ? `<span class="menu-item-badge">${badges.worklog}</span>` : ''}
+          </div>
+          <span>약국 업무일지</span>
+        </button>
+      `;
+    }
+
+    // 📦 약국 소모품 관리
+    if (isDirector || allowed.includes('supplies-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'supplies' ? 'active' : ''}" data-module="supplies" onclick="App.switchModule('supplies', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-boxes-stacked" style="color:#10b981;"></i>
+            ${badges.supplies ? `<span class="menu-item-badge">${badges.supplies}</span>` : ''}
+          </div>
+          <span>약국 소모품 관리</span>
+        </button>
+      `;
+    }
+
+    // 📋 환자 예약 주문 & 선결제 관리
+    if (isDirector || allowed.includes('patient-orders-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'patient-orders' ? 'active' : ''}" data-module="patient-orders" onclick="App.switchModule('patient-orders', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-clipboard-list" style="color:#0284c7;"></i>
+            ${badges['patient-orders'] ? `<span class="menu-item-badge">${badges['patient-orders']}</span>` : ''}
+          </div>
+          <span>환자 예약·미출 & 고객문자</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('medicine-location-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'medicine-location' ? 'active' : ''}" data-module="medicine-location" onclick="App.switchModule('medicine-location', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-boxes-packing text-primary"></i>
+            ${badges['medicine-location'] ? `<span class="menu-item-badge">${badges['medicine-location']}</span>` : ''}
+          </div>
+          <span>일반약 위치 관리</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('rx-medicine-location-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'rx-medicine-location' ? 'active' : ''}" data-module="rx-medicine-location" onclick="App.switchModule('rx-medicine-location', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-pills" style="color:#059669;"></i>
+            ${badges['rx-medicine-location'] ? `<span class="menu-item-badge">${badges['rx-medicine-location']}</span>` : ''}
+          </div>
+          <span>전문약(조제실) 위치 관리</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('pill-counter-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'pill-counter' ? 'active' : ''}" data-module="pill-counter" onclick="App.switchModule('pill-counter', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-calculator" style="color:#8b5cf6;"></i>
+            ${badges['pill-counter'] ? `<span class="menu-item-badge">${badges['pill-counter']}</span>` : ''}
+          </div>
+          <span>스마트 알약 카운터</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('pill-identifier-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'pill-identifier' ? 'active' : ''}" data-module="pill-identifier" onclick="App.switchModule('pill-identifier', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-capsules" style="color:#0284c7;"></i>
+            ${badges['pill-identifier'] ? `<span class="menu-item-badge">${badges['pill-identifier']}</span>` : ''}
+          </div>
+          <span>의약품 낱알 식별기</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('pharmacy-exchange-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'pharmacy-exchange' ? 'active' : ''}" data-module="pharmacy-exchange" onclick="App.switchModule('pharmacy-exchange', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-handshake" style="color:#4f46e5;"></i>
+            ${badges['pharmacy-exchange'] ? `<span class="menu-item-badge">${badges['pharmacy-exchange']}</span>` : ''}
+          </div>
+          <span>인근약국 교품 & 불용재고</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('expiry-returns-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'expiry-returns' ? 'active' : ''}" data-module="expiry-returns" onclick="App.switchModule('expiry-returns', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-hourglass-half" style="color:#d97706;"></i>
+            ${badges['expiry-returns'] ? `<span class="menu-item-badge">${badges['expiry-returns']}</span>` : ''}
+          </div>
+          <span>유효기간 & 반품 대장</span>
+        </button>
+      `;
+    }
+
+    // ==========================================
+    // Group 2: 🌴 HR & 근무 관리
+    // ==========================================
+    html += `
+      <div style="padding:14px 16px 4px 16px; font-size:11px; font-weight:800; color:#2563eb; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:5px; border-top:1px solid #e2e8f0; margin-top:8px;">
+        <i class="fas fa-users-cog"></i> <span>HR & 근무 관리</span>
+      </div>
+    `;
+
+    if (isDirector || allowed.includes('schedule-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'schedule' ? 'active' : ''}" data-module="schedule" onclick="App.switchModule('schedule', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-calendar-alt"></i>
+            ${badges.schedule ? `<span class="menu-item-badge ${badges.schedule === '!' ? 'badge-amber' : ''}">${badges.schedule}</span>` : ''}
+          </div>
+          <span>월간 근무 스케줄</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('annual-leave-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'annual-leave' ? 'active' : ''}" data-module="annual-leave" onclick="App.switchModule('annual-leave', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-umbrella-beach"></i>
+            ${badges.annualLeave ? `<span class="menu-item-badge">${badges.annualLeave}</span>` : ''}
+          </div>
+          <span>연차대장 & 달력</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('discount-purchase-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'discount-purchase' ? 'active' : ''}" data-module="discount-purchase" onclick="App.switchModule('discount-purchase', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-shopping-bag"></i>
+            ${badges.discountPurchase ? `<span class="menu-item-badge">${badges.discountPurchase}</span>` : ''}
+          </div>
+          <span>직원할인구매대장</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('rules-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'rules' ? 'active' : ''}" data-module="rules" onclick="App.switchModule('rules', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-book-medical"></i>
+          </div>
+          <span>취업규칙 전문</span>
+        </button>
+      `;
+    }
+
+    if (isDirector || allowed.includes('emergency-contacts-module')) {
+      html += `
+        <button class="menu-item ${activeModule === 'emergency-contacts' ? 'active' : ''}" data-module="emergency-contacts" onclick="App.switchModule('emergency-contacts', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-phone-alt text-warning"></i>
+          </div>
+          <span>약국 운영 지원 연락망</span>
+        </button>
+      `;
+    }
+
+    // ==========================================
+    // Group 3: 🔒 약국장 전용 관리 메뉴
+    // ==========================================
+    if (isDirector) {
+      html += `
+        <div style="padding:14px 16px 4px 16px; font-size:11px; font-weight:800; color:#ef4444; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:5px; border-top:1px solid #e2e8f0; margin-top:8px;">
+          <i class="fas fa-lock"></i> <span>약국장 전용 관리 메뉴</span>
+        </div>
+        <button class="menu-item ${activeModule === 'approval' ? 'active' : ''}" data-module="approval" onclick="App.switchModule('approval', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-user-check text-danger"></i>
+            ${badges.approval ? `<span class="menu-item-badge">${badges.approval}</span>` : ''}
+          </div>
+          <span>약국장 결재</span>
+        </button>
+        <button class="menu-item ${activeModule === 'staff-directory' ? 'active' : ''}" data-module="staff-directory" onclick="App.switchModule('staff-directory', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-address-book text-danger"></i>
+          </div>
+          <span>직원 명부</span>
+        </button>
+        <button class="menu-item ${activeModule === 'ssg-settlement' ? 'active' : ''}" data-module="ssg-settlement" onclick="App.switchModule('ssg-settlement', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-coins text-warning"></i>
+          </div>
+          <span>365메디스타약국 스마트장부</span>
+        </button>
+        <button class="menu-item ${activeModule === 'building-rental' ? 'active' : ''}" data-module="building-rental" onclick="App.switchModule('building-rental', true)">
+          <div class="menu-icon-wrapper">
+            <i class="fas fa-building text-info"></i>
+          </div>
+          <span>건물 임대업 대시보드</span>
+        </button>
+      `;
+    }
+
+    // ==========================================
+    // Bottom Utility: 📖 앱 사용설명서 (슬림 다크 글래스 버튼)
+    // ==========================================
+    html += `
+      <div style="margin-top:auto; padding:12px 14px 4px 14px; border-top:1px solid rgba(255,255,255,0.08);">
+        <button type="button" onclick="App.openGuide(false)" style="width:100%; background:rgba(56, 189, 248, 0.1); color:#7dd3fc; border:1px solid rgba(56, 189, 248, 0.28); border-radius:8px; padding:7px 11px; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(56, 189, 248, 0.18)'; this.style.color='#bae6fd';" onmouseout="this.style.background='rgba(56, 189, 248, 0.1)'; this.style.color='#7dd3fc';">
+          <span style="display:flex; align-items:center; gap:7px;">
+            <i class="fas fa-book-open" style="color:#38bdf8; font-size:12.5px;"></i>
+            <span>앱 사용설명서 가이드</span>
+          </span>
+          <i class="fas fa-chevron-right" style="font-size:10px; opacity:0.75;"></i>
+        </button>
+      </div>
+    `;
+
+    nav.innerHTML = html;
+
+    // ★ 추가: 좌측 하단 구글 시트 연동 버튼 약국장 전용 보안 처리 ★
+    const footerBtn = document.querySelector('.drawer-footer');
+    if (footerBtn) {
+      if (isDirector) {
+        footerBtn.style.display = 'block'; // 약국장으로 로그인하면 보임
+      } else {
+        footerBtn.style.display = 'none';  // 로그아웃 상태이거나 일반 직원이면 흔적도 없이 숨김
+      }
+    }
+  }
+  function renderUserHeader() {
+    const badge = document.getElementById('user-profile-badge');
+    if (!badge) return;
+
+    const curr = window.SheetsSync.getCurrentUser();
+    if (curr) {
+      const isDirector = curr.role === '약국장';
+      const isPharm = curr.role === '근무약사';
+      
+      const badgeStyle = isDirector
+        ? 'background:linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color:#ffffff;'
+        : isPharm
+        ? 'background:linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color:#ffffff;'
+        : 'background:linear-gradient(135deg, #059669 0%, #047857 100%); color:#ffffff;';
+
+      const iconClass = isDirector ? 'fa-crown text-warning' : isPharm ? 'fa-user-md' : 'fa-user-nurse';
+
+      badge.innerHTML = `
+        <div class="d-flex align-items-center gap-1" style="white-space:nowrap; flex-wrap:nowrap;">
+          <span class="user-badge-pill" style="${badgeStyle} font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px; box-shadow:0 2px 6px rgba(0,0,0,0.12); display:inline-flex; align-items:center; gap:5px;" title="${curr.name} (${curr.role})">
+            <i class="fas ${iconClass}"></i>
+            <span>${curr.name}</span>
+          </span>
+
+          <button type="button" class="header-action-btn" onclick="App.openChangePwModal()" title="비밀번호 자율 변경" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:20px; font-size:11.5px; font-weight:700; color:#334155; padding:5px 10px; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:inline-flex; align-items:center; gap:4px; cursor:pointer;" onmouseover="this.style.background='#f8fafc'; this.style.borderColor='#94a3b8';" onmouseout="this.style.background='#ffffff'; this.style.borderColor='#cbd5e1';">
+            <i class="fas fa-key text-warning"></i>
+            <span>비번 변경</span>
+          </button>
+
+          <button type="button" class="header-action-btn" onclick="App.userLogout()" title="계정 로그아웃 및 계정 전환" style="background:#fff1f2; border:1px solid #fecdd3; border-radius:20px; font-size:11.5px; font-weight:700; color:#e11d48; padding:5px 10px; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:inline-flex; align-items:center; gap:4px; cursor:pointer;" onmouseover="this.style.background='#ffe4e6'; this.style.borderColor='#fda4af';" onmouseout="this.style.background='#fff1f2'; this.style.borderColor='#fecdd3';">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>로그아웃</span>
+          </button>
+        </div>
+      `;
+    } else {
+      badge.innerHTML = `
+        <button class="btn btn-sm font-bold shadow-sm" onclick="App.showLoginModal()" style="background:linear-gradient(135deg, #059669 0%, #047857 100%); color:#ffffff; border:none; border-radius:20px; font-size:12px; padding:6px 14px; display:inline-flex; align-items:center; gap:5px;">
+          <i class="fas fa-user-lock"></i> <span>직원 로그인</span>
+        </button>
+      `;
+    }
+  }
+
+  function renderQuickLoginButtons() {
+    const container = document.getElementById('quick-login-buttons');
+    if (!container) return;
+
+    const emps = window.SheetsSync.getEmployees();
+
+    const director = emps.filter(e => e.role === '약국장');
+    const pharmacists = emps.filter(e => e.role === '근무약사');
+    const staff = emps.filter(e => e.role === '일반직원' || e.role === '예비인력');
+
+    container.innerHTML = `
+      <div class="w-100 mb-3 text-start">
+        <div style="font-size:11px; font-weight:bold; color:#dc2626; margin-bottom:6px; letter-spacing:0.5px;">👑 대표 약국장</div>
+        <div class="d-flex flex-wrap gap-2">
+          ${director.map(e => `
+            <button type="button" class="btn btn-sm" onclick="App.quickSelectLogin('${e.email || e.username}')" style="background:linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color:#fff; border:none; border-radius:20px; font-size:13px; padding:7px 16px; font-weight:bold; box-shadow:0 2px 6px rgba(220,38,38,0.25);">
+              🏆 ${e.name} (${e.role})
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="w-100 mb-3 text-start">
+        <div style="font-size:11px; font-weight:bold; color:#2563eb; margin-bottom:6px; letter-spacing:0.5px;">👨‍⚕️ 근무약사 (${pharmacists.length}인)</div>
+        <div class="d-flex flex-wrap gap-2">
+          ${pharmacists.map(e => `
+            <button type="button" class="btn btn-sm" onclick="App.quickSelectLogin('${e.email || e.username}')" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:20px; font-size:13px; padding:6px 14px; font-weight:600;" onmouseover="this.style.background='#dbeafe';" onmouseout="this.style.background='#eff6ff';">
+              👨‍⚕️ ${e.name} (${e.position || '약사'})
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="w-100 text-start">
+        <div style="font-size:11px; font-weight:bold; color:#059669; margin-bottom:6px; letter-spacing:0.5px;">👨‍💼 일반직원 및 지원인력 (${staff.length}인)</div>
+        <div class="d-flex flex-wrap gap-2">
+          ${staff.map(e => `
+            <button type="button" class="btn btn-sm" onclick="App.quickSelectLogin('${e.email || e.username}')" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; border-radius:20px; font-size:13px; padding:6px 14px; font-weight:600;" onmouseover="this.style.background='#dcfce7';" onmouseout="this.style.background='#f0fdf4';">
+              👨‍💼 ${e.name} (${e.position || '직원'})
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function quickSelectLogin(val) {
+    const input = document.getElementById('login-username');
+    if (input) input.value = val;
+
+    const passInput = document.getElementById('login-passcode');
+    if (passInput) {
+      passInput.value = ''; // 🔒 보안 수칙: 비밀번호는 자동 입력되지 않으며 본인이 직접 입력합니다.
+      passInput.focus();
+    }
+  }
+
+  function showLoginModal() {
+    renderQuickLoginButtons();
+    const m = document.getElementById('login-modal');
+    if (m) m.style.display = 'flex';
+  }
+
+  function closeLoginModal() {
+    const m = document.getElementById('login-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function handleLoginSubmit(e) {
+    e.preventDefault();
+    const inputVal = document.getElementById('login-username').value.trim().toLowerCase();
+    const pass = document.getElementById('login-passcode').value.trim();
+
+    const emps = window.SheetsSync.getEmployees();
+    
+    // 유연한 다중 조건 매칭 (이름, 이메일, 아이디, ID 접두사 모두 가능)
+    const target = emps.find(emp => {
+      const u = (emp.username || '').toLowerCase();
+      const email = (emp.email || '').toLowerCase();
+      const name = (emp.name || '').toLowerCase();
+      const id = (emp.id || '').toLowerCase();
+      const shortUser = u.split('@')[0];
+
+      return inputVal === u ||
+             inputVal === email ||
+             inputVal === name ||
+             inputVal === id ||
+             inputVal === shortUser ||
+             u.startsWith(inputVal) ||
+             email.startsWith(inputVal);
+    });
+
+    if (!target) {
+      alert('❌ 존재하지 않는 아이디(이메일 또는 이름)입니다.');
+      return;
+    }
+
+    if (!verifyEmployeePasscode(target, pass)) {
+      alert(`❌ 비밀번호가 올바르지 않습니다.\n(초기 비밀번호는 ${target.name} 님의 휴대폰 뒷 4자리 또는 1234입니다)`);
+      return;
+    }
+
+    window.SheetsSync.setCurrentUser(target);
+    closeLoginModal();
+
+    // 🌐 로그인 직후 즉시 최신 클라우드 전체 데이터 동기화
+    window.SheetsSync.pullFromCloud();
+
+    if (window.ScheduleModule && window.ScheduleModule.closeInlinePanel) {
+      window.ScheduleModule.closeInlinePanel();
+    }
+
+    renderSidebarNavigation();
+    renderUserHeader();
+
+    // 🚨 약국장의 스케줄 수정(반려) 요청이 있는 경우 스케줄 탭으로 자동 이동 및 알림 팝업 전송!
+    checkPendingRejectionNotice(true, target);
+  }
+
+  function checkPendingRejectionNotice(isLoginEvent = false, targetUser = null) {
+    const currUser = targetUser || window.SheetsSync.getCurrentUser();
+    if (!currUser) return;
+
+    if (isLoginEvent) {
+      if (currUser.role === '약국장') {
+        switchModule('notices', true);
+      } else {
+        const data = window.SheetsSync.getData();
+        const scheduleStatus = data.scheduleStatus || {};
+        let hasMyPendingNotice = false;
+        Object.keys(scheduleStatus).forEach(mKey => {
+          const st = scheduleStatus[mKey];
+          if (st && st[currUser.id] === 'DRAFT' && (st[currUser.id + '_comment'] || st.directorComment) && !st.directorApproved) {
+            hasMyPendingNotice = true;
+          }
+        });
+
+        if (hasMyPendingNotice) {
+          switchModule('schedule', true);
+        } else {
+          switchModule('notices', true);
+        }
+      }
+    }
+  }
+
+  function userLogout() {
+    window.SheetsSync.logoutUser();
+    if (window.ScheduleModule && window.ScheduleModule.closeInlinePanel) {
+      window.ScheduleModule.closeInlinePanel();
+    }
+    renderSidebarNavigation();
+    renderUserHeader();
+    renderActiveModule();
+  }
+
+  function openChangePwModal() {
+    const curr = window.SheetsSync.getCurrentUser();
+    if (!curr) {
+      alert('🔒 먼저 상단 [🔑 직원 로그인 / 계정 선택]을 통해 접속한 후 비밀번호를 변경해 주세요.');
+      return;
+    }
+    const m = document.getElementById('change-password-modal');
+    if (m) {
+      document.getElementById('cpw-current').value = '';
+      document.getElementById('cpw-new').value = '';
+      document.getElementById('cpw-confirm').value = '';
+      document.getElementById('pw-realtime-msg').innerText = '비밀번호를 입력해 주세요.';
+      document.getElementById('pw-realtime-msg').className = 'mb-3 p-2 text-center text-muted';
+      m.style.display = 'flex';
+    }
+  }
+
+  function closeChangePwModal() {
+    const m = document.getElementById('change-password-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function openSoundSettingsModal() {
+    const m = document.getElementById('sound-settings-modal');
+    if (m) {
+      updateSoundModalUI();
+      m.style.display = 'flex';
+    }
+  }
+
+  function closeSoundSettingsModal() {
+    const m = document.getElementById('sound-settings-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  function updateSoundModalUI() {}
+  function showSoundToast() {}
+  function previewSoundPreset() {}
+  function selectSoundPreset() {}
+
+  function checkPwRealtime() {
+    const newPw = document.getElementById('cpw-new').value;
+    const msgBox = document.getElementById('pw-realtime-msg');
+    if (!msgBox) return;
+
+    const res = window.SheetsSync.validatePasswordComplexity(newPw);
+    if (res.valid) {
+      msgBox.className = 'mb-3 p-2 text-center text-white bg-success';
+      msgBox.innerText = '✅ ' + res.message;
+    } else {
+      msgBox.className = 'mb-3 p-2 text-center text-white bg-danger';
+      msgBox.innerText = '❌ ' + res.message;
+    }
+  }
+
+  function handleChangePwSubmit(e) {
+    e.preventDefault();
+    const curr = window.SheetsSync.getCurrentUser();
+    const currentPw = document.getElementById('cpw-current').value.trim();
+    const newPw = document.getElementById('cpw-new').value.trim();
+    const confirmPw = document.getElementById('cpw-confirm').value.trim();
+
+    if (newPw !== confirmPw) {
+      alert('❌ 새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+
+    const res = window.SheetsSync.changePassword(curr.id, currentPw, newPw);
+    if (res.success) {
+      alert('🎉 ' + res.message);
+      closeChangePwModal();
+    } else {
+      alert('❌ ' + res.message);
+    }
+  }
+
+  function renderActiveModule(preserveScroll = true) {
+    const currUser = window.SheetsSync.getCurrentUser();
+    if (!currUser) {
+      renderLoginGateway();
+      return;
+    }
+
+    // 📌 전 모듈 스크롤 위치 자석 기억 (Window Scroll + Module Content Scroll)
+    let savedWindowScrollY = 0;
+    let savedContainerScrollTop = 0;
+    const contentEl = document.getElementById('module-content');
+
+    if (preserveScroll) {
+      savedWindowScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (contentEl) savedContainerScrollTop = contentEl.scrollTop || 0;
+    }
+
+    const contentTarget = document.getElementById('module-content');
+    if (contentTarget) {
+      contentTarget.innerHTML = '';
+    }
+
+    switch (activeModule) {
+      case 'notices':
+        if (window.NoticesModule) window.NoticesModule.render('module-content');
+        break;
+      case 'worklog':
+        if (window.WorklogModule) window.WorklogModule.render('module-content');
+        break;
+      case 'supplies':
+        if (window.SuppliesModule) {
+          const el = document.getElementById('module-content');
+          if (el) el.innerHTML = window.SuppliesModule.renderHTML();
+        }
+        break;
+      case 'patient-orders':
+        if (window.PatientOrdersModule) window.PatientOrdersModule.render('module-content');
+        break;
+      case 'medicine-location':
+        if (window.MedicineLocationModule) window.MedicineLocationModule.render('module-content');
+        break;
+      case 'rx-medicine-location':
+        if (window.RxMedicineLocationModule) window.RxMedicineLocationModule.render('module-content');
+        break;
+      case 'pill-counter':
+        if (window.PillCounterModule) window.PillCounterModule.render('module-content');
+        break;
+      case 'pill-identifier':
+        if (window.PillIdentifierModule) window.PillIdentifierModule.render('module-content');
+        break;
+        if (window.RxMedicineLocationModule) window.RxMedicineLocationModule.render('module-content');
+        break;
+      case 'pharmacy-exchange':
+        if (window.PharmacyExchangeModule) window.PharmacyExchangeModule.render('module-content');
+        break;
+      case 'expiry-returns':
+        if (window.ExpiryReturnsModule) window.ExpiryReturnsModule.render('module-content');
+        break;
+      case 'schedule':
+        if (window.ScheduleModule) window.ScheduleModule.render('module-content');
+        break;
+      case 'annual-leave':
+        if (window.AnnualLeaveModule) window.AnnualLeaveModule.render('module-content');
+        break;
+      case 'staff-directory':
+        if (window.StaffDirectoryModule) window.StaffDirectoryModule.render('module-content');
+        break;
+      case 'discount-purchase':
+        if (window.DiscountPurchaseModule) window.DiscountPurchaseModule.render('module-content');
+        break;
+      case 'rules':
+        if (window.RulesModule) window.RulesModule.render('module-content');
+        break;
+      case 'emergency-contacts':
+        if (window.EmergencyContactsModule) window.EmergencyContactsModule.render('module-content');
+        break;
+      case 'ssg-settlement':
+        if (window.SmartLedgerModule) window.SmartLedgerModule.render('module-content', 'ssg');
+        break;
+      case 'building-rental':
+        if (window.BuildingRentalModule) window.BuildingRentalModule.render('module-content');
+        break;
+      case 'approval':
+        if (window.ApprovalModule) window.ApprovalModule.render('module-content');
+        break;
+    }
+
+    // 📰 상단 데일리 3초 브리핑 위젯 자동 최신 렌더링
+    try {
+      if (window.DailyBriefingWidget && typeof window.DailyBriefingWidget.renderWidget === 'function') {
+        window.DailyBriefingWidget.renderWidget();
+      }
+    } catch (widgetErr) {
+      console.error("DailyBriefingWidget render error in app.js:", widgetErr);
+    }
+
+    // 🎯 모듈 이동 시에는 최상단으로, 동일 모듈 새로고침 시 스크롤 위치 복원
+    if (preserveScroll && (savedWindowScrollY > 0 || savedContainerScrollTop > 0)) {
+      requestAnimationFrame(() => {
+        if (savedWindowScrollY > 0) window.scrollTo({ top: savedWindowScrollY, behavior: 'instant' });
+        if (contentEl && savedContainerScrollTop > 0) contentEl.scrollTop = savedContainerScrollTop;
+      });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      if (contentEl) contentEl.scrollTop = 0;
+    }
+  }
+
+  function renderLoginGateway() {
+    const mountEl = document.getElementById('daily-briefing-widget-mount');
+    if (mountEl) mountEl.innerHTML = '';
+
+    const container = document.getElementById('module-content');
+    if (!container) return;
+
+    const titleEl = document.getElementById('active-module-title');
+    if (titleEl) titleEl.innerText = '🔒 365메디스타약국 커넥트';
+
+    const emps = window.SheetsSync.getEmployees() || [];
+    const activeEmps = emps.filter(e => !e.isCandidate && e.role !== '예비인력' && !e.name.includes('이정은') && !e.name.includes('간영자') && !e.name.includes('테스트'));
+    
+    // 2대 정예 그룹: 조제 케어팀 (약사 5인: 문성도 포함) / 헬스케어 파트너 (지원팀 4인)
+    const careTeam = activeEmps.filter(e => e.role === '약국장' || e.role === '근무약사' || (e.role || '').includes('약사'));
+    const partnerTeam = activeEmps.filter(e => e.role === '일반직원');
+
+    container.innerHTML = `
+      <div style="min-height: 85vh; display: flex; align-items: center; justify-content: center; padding: 24px 14px;">
+        <div style="width: 100%; max-width: 560px; padding: 42px 32px; background: rgba(255, 255, 255, 0.98); border: 1.5px solid rgba(203, 213, 225, 0.85); border-radius: 28px; box-shadow: 0 25px 60px -12px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.8) inset; text-align: center;">
+          
+          <!-- 🌟 3D 엠보싱 대형 로고 -->
+          <div style="width: 88px; height: 88px; margin: 0 auto 16px auto; border-radius: 24px; background: radial-gradient(circle at 30% 30%, #ffffff 0%, #ecfdf5 70%, #d1fae5 100%); border: 2.5px solid #6ee7b7; display: flex; align-items: center; justify-content: center; box-shadow: 0 16px 32px -4px rgba(5, 150, 105, 0.28), 0 4px 12px rgba(0,0,0,0.06), inset 0 2px 5px rgba(255,255,255,0.95); padding: 8px;">
+            <img src="logo.jpg" alt="365메디스타약국 로고" style="width: 100%; height: 100%; object-fit: contain; border-radius: 16px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));">
+          </div>
+
+          <h2 style="font-size: 25px; font-weight: 900; color: #0f172a; margin-bottom: 4px; letter-spacing: -0.5px;">
+            365메디스타약국
+          </h2>
+          <p style="font-size: 13.5px; color: #64748b; font-weight: 600; margin-bottom: 24px; letter-spacing: 0.2px;">
+            HR & Operations Platform • Connect Portal
+          </p>
+
+          <!-- 2대 정예 그룹 계정 선택 박스 -->
+          <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 20px; padding: 22px 18px; margin-bottom: 24px; text-align: left;">
+            
+            <!-- 1. 💊 조제 케어팀 (약사 5인) -->
+            <div style="margin-bottom: 18px;">
+              <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #1d4ed8; background: #eff6ff; border: 1.5px solid #bfdbfe; padding: 4px 12px; border-radius: 20px; margin-bottom: 10px;">
+                <i class="fas fa-pills"></i> 조제 케어팀
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;">
+                ${careTeam.map(e => `
+                  <button type="button" onclick="App.quickSelectGatewayLogin('${e.id}')" id="gw-emp-btn-${e.id}" class="gw-emp-btn" style="background: #ffffff; color: #1e40af; border: 1.5px solid #cbd5e1; border-radius: 14px; font-size: 14.5px; padding: 9px 6px; font-weight: 800; cursor: pointer; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                    ${e.name}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- 2. 🌿 헬스케어 파트너 (지원팀 4인) -->
+            <div>
+              <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #047857; background: #ecfdf5; border: 1.5px solid #a7f3d0; padding: 4px 12px; border-radius: 20px; margin-bottom: 10px;">
+                <i class="fas fa-hand-holding-medical"></i> 헬스케어 파트너
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;">
+                ${partnerTeam.map(e => `
+                  <button type="button" onclick="App.quickSelectGatewayLogin('${e.id}')" id="gw-emp-btn-${e.id}" class="gw-emp-btn" style="background: #ffffff; color: #047857; border: 1.5px solid #cbd5e1; border-radius: 14px; font-size: 14.5px; padding: 9px 6px; font-weight: 800; cursor: pointer; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                    ${e.name}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 로그인 폼 (이메일 직접 입력 및 상단 터치 자동완성 지원) -->
+          <form onsubmit="App.handleGatewayLoginSubmit(event)" style="text-align: left;">
+            <div class="mb-3">
+              <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                👤 계정 아이디 (이메일 주소)
+              </label>
+              <input type="text" id="gw-login-username" class="form-control" placeholder="예: iniha@naver.com (성함 터치 또는 직접 입력)" style="height: 48px; font-size: 14.5px; font-weight: 700; color: #0f172a; background: #ffffff; border-radius: 14px; border: 1.5px solid #cbd5e1; padding: 0 16px;" required>
+            </div>
+
+            <div class="mb-4">
+              <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                🔒 비밀번호 <span style="font-weight: normal; color: #94a3b8; font-size: 12px;">(초기 번호: 휴대폰 뒷 4자리)</span>
+              </label>
+              <input type="password" id="gw-login-passcode" class="form-control" placeholder="비밀번호를 입력하세요" style="height: 48px; font-size: 16px; border-radius: 14px; border: 1.5px solid #cbd5e1; letter-spacing: 2px; padding: 0 16px;" required>
+            </div>
+
+            <button type="submit" style="width: 100%; height: 54px; border-radius: 16px; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; font-size: 16.5px; font-weight: 800; border: none; box-shadow: 0 6px 20px rgba(5,150,105,0.4); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.2s ease;">
+              <i class="fas fa-link"></i> ✨ 365메디스타약국 커넥트 입장
+            </button>
+          </form>
+
+        </div>
+      </div>
+    `;
+  }
+
+  function quickSelectGatewayLogin(empId) {
+    const emps = window.SheetsSync.getEmployees() || [];
+    const emp = emps.find(e => e.id === empId);
+    if (!emp) return;
+
+    const userInput = document.getElementById('gw-login-username');
+    const passInput = document.getElementById('gw-login-passcode');
+
+    if (userInput) userInput.value = emp.email || emp.username || emp.name;
+
+    document.querySelectorAll('.gw-emp-btn').forEach(btn => {
+      btn.style.outline = 'none';
+      btn.style.boxShadow = '';
+      btn.style.borderColor = '#cbd5e1';
+    });
+    const activeBtn = document.getElementById('gw-emp-btn-' + emp.id);
+    if (activeBtn) {
+      activeBtn.style.outline = '3px solid #059669';
+      activeBtn.style.boxShadow = '0 0 0 4px rgba(5,150,105,0.25)';
+      activeBtn.style.borderColor = '#059669';
+    }
+
+    if (passInput) {
+      passInput.value = '';
+      passInput.focus();
+    }
+  }
+
+  function verifyEmployeePasscode(emp, inputPass) {
+    if (!emp || !inputPass) return false;
+    const p = String(inputPass).trim();
+    const storedPass = String(emp.passcode || '').trim();
+
+    // 1. 등록/수정된 최신 비밀번호와 100% 일치할 때만 승인 (이전 번호 및 1234 완전 차단)
+    if (storedPass) {
+      return p === storedPass;
+    }
+
+    // 2. 비밀번호가 설정되어 있지 않은 경우에만 휴대폰 뒷 4자리 또는 1234 허용
+    const phoneDigits = String(emp.phone || '').replace(/[^0-9]/g, '');
+    const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : '';
+    if (phoneLast4 && p === phoneLast4) return true;
+    if (p === '1234') return true;
+
+    return false;
+  }
+
+  function handleGatewayLoginSubmit(e) {
+    e.preventDefault();
+    const inputVal = (document.getElementById('gw-login-username').value || '').trim().toLowerCase();
+    const pass = document.getElementById('gw-login-passcode').value.trim();
+
+    if (!inputVal) {
+      alert('계정 아이디(이메일 주소)를 입력하거나 위에서 본인 이름을 선택해 주세요.');
+      return;
+    }
+
+    const emps = window.SheetsSync.getEmployees() || [];
+    const target = emps.find(emp => {
+      const u = (emp.username || '').toLowerCase();
+      const email = (emp.email || '').toLowerCase();
+      const name = (emp.name || '').toLowerCase();
+      const id = (emp.id || '').toLowerCase();
+      const shortUser = u.split('@')[0];
+      const shortEmail = email.split('@')[0];
+
+      return inputVal === u ||
+             inputVal === email ||
+             inputVal === name ||
+             inputVal === id ||
+             inputVal === shortUser ||
+             inputVal === shortEmail ||
+             u.startsWith(inputVal) ||
+             email.startsWith(inputVal);
+    });
+
+    if (!target) {
+      alert('❌ 일치하는 직원 계정(이메일 또는 성함)을 찾을 수 없습니다.');
+      return;
+    }
+
+    if (!verifyEmployeePasscode(target, pass)) {
+      alert(`❌ 비밀번호가 올바르지 않습니다.\n(초기 비밀번호는 ${target.name} 님의 휴대폰 뒷 4자리 또는 1234입니다)`);
+      return;
+    }
+
+    window.SheetsSync.setCurrentUser(target);
+    renderSidebarNavigation();
+    renderUserHeader();
+    renderActiveModule();
+    checkPendingRejectionNotice(true, target);
+  }
+
+  function switchModule(moduleName, isUserAction = false, targetSubTab = null) {
+    if (!MODULE_TITLES[moduleName]) return;
+
+    // 보안 접근 가드 (약국장 전용 4대 모듈 및 맞춤형 탭 권한)
+    const curr = window.SheetsSync.getCurrentUser();
+    const isDirector = curr && (curr.role === '약국장' || curr.id === 'emp_1');
+
+    if (['approval', 'staff-directory', 'ssg-settlement', 'building-rental'].includes(moduleName) && !isDirector) {
+      alert('🔒 보안 안내: 선택하신 메뉴는 약국장 전용 관리 영역입니다.');
+      return;
+    }
+
+    if (!isDirector && curr) {
+      let allowed = Array.isArray(curr.allowedTabs) ? [...curr.allowedTabs] : [];
+      // 🛡️ 전 직원 필수 공용 탭 강제 보존 (환자예약주문 & 교품불용재고 절대 유실 방지)
+      ['patient-orders-module', 'pharmacy-exchange-module', 'pill-counter-module', 'pill-identifier-module'].forEach(mTab => {
+        if (!allowed.includes(mTab)) allowed.push(mTab);
+      });
+      const targetTabId = moduleName + '-module';
+      if (!allowed.includes(targetTabId)) {
+        alert('🔒 접근 권한 안내: 약국장님에 의해 접근 권한이 부여되지 않은 메뉴입니다.');
+        return;
+      }
+    }
+
+    activeModule = moduleName;
+
+    document.querySelectorAll('.menu-item').forEach(btn => {
+      if (btn.getAttribute('data-module') === moduleName) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    const titleElem = document.getElementById('active-module-title');
+    if (titleElem) {
+      titleElem.textContent = MODULE_TITLES[moduleName];
+    }
+
+    // 📌 탭 진입 시 스마트 읽음 처리 후 사이드바 뱃지 즉시 갱신
+    try {
+      if (moduleName === 'notices') {
+        markNoticesRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'worklog') {
+        markWorklogRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'medicine-location') {
+        markMedicineLocationRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'rx-medicine-location') {
+        markRxMedicineLocationRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'supplies') {
+        markSuppliesRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'patient-orders') {
+        markPatientOrdersRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'pharmacy-exchange') {
+        markPharmacyExchangeRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'expiry-returns') {
+        markExpiryReturnsRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'approval') {
+        markApprovalRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'pill-counter') {
+        markPillCounterRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'pill-identifier') {
+        markPillIdentifierRead();
+        updateSidebarBadgesOnly();
+      } else if (moduleName === 'discount-purchase') {
+        markDiscountPurchaseRead();
+        updateSidebarBadgesOnly();
+      }
+    } catch(err) {
+      console.warn("Read tracking error:", err);
+    }
+
+    if (moduleName === 'schedule' && isUserAction) {
+      if (window.ScheduleModule && typeof window.ScheduleModule.setCurrentToNow === 'function') {
+        window.ScheduleModule.setCurrentToNow();
+      }
+    }
+
+    if (moduleName === 'ssg-settlement' && isUserAction) {
+      if (window.SmartLedgerModule && typeof window.SmartLedgerModule.setCurrentToNow === 'function') {
+        window.SmartLedgerModule.setCurrentToNow();
+      }
+    }
+
+    if (moduleName === 'building-rental' && isUserAction) {
+      if (window.BuildingRentalModule && typeof window.BuildingRentalModule.setCurrentToNow === 'function') {
+        window.BuildingRentalModule.setCurrentToNow();
+      }
+    }
+
+    if (moduleName === 'pharmacy-exchange') {
+      if (window.PharmacyExchangeModule) {
+        if (targetSubTab) {
+          window.PharmacyExchangeModule.setSubTab(targetSubTab, false);
+        } else if (isUserAction) {
+          window.PharmacyExchangeModule.autoSelectLatestSubTab();
+        }
+      }
+    }
+
+    try {
+      renderActiveModule(false);
+    } catch (err) {
+      console.error("Error during switchModule renderActiveModule:", err);
+    } finally {
+      if (isUserAction && window.innerWidth <= 900) {
+        closeDrawer();
+      }
+    }
+  }
+
+  function openDrawer() {
+    isDrawerOpen = true;
+    const sidebar = document.getElementById('app-drawer');
+    const overlay = document.getElementById('drawer-overlay');
+    const wrapper = document.getElementById('main-wrapper');
+
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('open');
+    if (wrapper) wrapper.classList.add('drawer-open');
+  }
+
+  function closeDrawer() {
+    isDrawerOpen = false;
+    const sidebar = document.getElementById('app-drawer');
+    const overlay = document.getElementById('drawer-overlay');
+    const wrapper = document.getElementById('main-wrapper');
+
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+    if (wrapper) wrapper.classList.remove('drawer-open');
+  }
+
+  function toggleDrawer() {
+    if (isDrawerOpen) {
+      closeDrawer();
+    } else {
+      openDrawer();
+    }
+  }
+
+  function loadSavedTheme() {
+    try {
+      const saved = localStorage.getItem('mds_theme');
+      const body = document.body;
+      const icon = document.getElementById('theme-toggle-icon');
+      if (saved === 'dark') {
+        body.setAttribute('data-theme', 'dark');
+        body.classList.add('dark-theme');
+        if (icon) icon.className = 'fas fa-sun text-warning';
+      }
+    } catch(e){}
+  }
+
+  function toggleTheme() {
+    const body = document.body;
+    const icon = document.getElementById('theme-toggle-icon');
+    const isDark = body.getAttribute('data-theme') === 'dark' || body.classList.contains('dark-theme');
+
+    if (isDark) {
+      body.removeAttribute('data-theme');
+      body.classList.remove('dark-theme');
+      if (icon) icon.className = 'fas fa-moon';
+      try { localStorage.setItem('mds_theme', 'light'); } catch(e){}
+    } else {
+      body.setAttribute('data-theme', 'dark');
+      body.classList.add('dark-theme');
+      if (icon) icon.className = 'fas fa-sun text-warning';
+      try { localStorage.setItem('mds_theme', 'dark'); } catch(e){}
+    }
+  }
+
+  function updateSheetSyncBadge() {
+    const textElem = document.getElementById('sheet-sync-status-text');
+    if (textElem) {
+      textElem.textContent = `📊 구글 시트 다운로드`;
+    }
+  }
+
+  function downloadActiveModuleToGoogleSheets() {
+    const data = window.SheetsSync.getData();
+    const employees = data.employees || [];
+    const schedule = data.schedule || [];
+    const currentYear = 2026;
+    const currentMonth = 8;
+    const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+    let moduleName = MODULE_TITLES[activeModule] || activeModule;
+    moduleName = moduleName.replace(/[^a-zA-Z0-9가-힣]/g, '_');
+    let filename = `365메디스타약국_${moduleName}_${currentYear}년${String(currentMonth).padStart(2, '0')}월.csv`;
+    let rows = [];
+
+    if (activeModule === 'schedule') {
+      filename = `365메디스타약국_월간근무스케줄및급여정산표_${currentYear}년${String(currentMonth).padStart(2, '0')}월.csv`;
+      
+      rows.push(['365메디스타약국 월간 근무 스케줄 및 세전/세후 급여 정산 집계표']);
+      rows.push(['산출년월', `${currentYear}년 ${currentMonth}월`]);
+      rows.push([]);
+
+      rows.push(['[ 1. 근무약사 급여 정산표 ]']);
+      rows.push(['약사명', '직무', '평일 시급(원)', '주말/공휴일 시급(원)', '총 실근무 시수', '평일 시수', '주말/공휴일 시수', '평일 산출액(원)', '주말/공휴일 산출액(원)', '월 세전 총급여액(원)']);
+
+      const pharmacists = employees.filter(e => e.role === '근무약사' || (e.role || '').includes('약사'));
+      const pRatesMap = window.SheetsSync.getPharmacistRates ? window.SheetsSync.getPharmacistRates() : {};
+
+      pharmacists.forEach(p => {
+        const empShifts = schedule.filter(r => r.empId === p.id && r.date.startsWith(monthKey));
+        const rateObj = pRatesMap[p.id] || { weekdayRate: p.hourlyRate || 35000, holidayRate: 40000, breakHours: 1.0 };
+        const calc = window.LaborCalculator.calculatePharmacistPayroll(empShifts, rateObj.weekdayRate, rateObj.holidayRate, rateObj.breakHours);
+        rows.push([p.name, p.role, rateObj.weekdayRate, rateObj.holidayRate, calc.totalNetHours, calc.weekdayNetHours, calc.holidayNetHours, calc.weekdayPay, calc.holidayPay, calc.totalPayroll]);
+      });
+
+      rows.push([]);
+      rows.push(['[ 2. 일반직원 급여 정산표 ]']);
+      rows.push(['직원명', '직무', '기준시급(원)', '기본월급(원)', '비과세 식대(원)', '초과수당(원)', '공제삭감(원)', '조정반영 세전총급여(원)']);
+
+      const staffMembers = employees.filter(e => !e.role.includes('약사') && e.role !== '약국장' && e.role !== '예비인력' && e.name !== '이정은');
+      const allAdjustments = window.SheetsSync.getOvertimeAdjustments ? window.SheetsSync.getOvertimeAdjustments() : {};
+      const monthAdj = allAdjustments[monthKey] || {};
+
+      staffMembers.forEach(s => {
+        const empShifts = schedule.filter(r => r.empId === s.id && r.date.startsWith(monthKey));
+        const calc = window.LaborCalculator.calculateStaffPayroll(empShifts, s.hourlyRate || 13500);
+        const empAdj = monthAdj[s.id] || { overtimePay: 0, deductionPay: 0 };
+        const baseSal = s.baseMonthlySalary || 2621500;
+        const total = baseSal + 200000 + (empAdj.overtimePay || 0) - (empAdj.deductionPay || 0);
+        rows.push([s.name, s.position, s.hourlyRate || 13500, baseSal, 200000, empAdj.overtimePay || 0, empAdj.deductionPay || 0, total]);
+      });
+
+      rows.push([]);
+      rows.push(['[ 3. 상세 일자별 근무 기록표 ]']);
+      rows.push(['일자', '직원명', '직무', '근무구분', '출근시간', '퇴근시간', '휴게시간 차감']);
+      schedule.filter(r => r.date.startsWith(monthKey)).forEach(r => {
+        const emp = employees.find(e => e.id === r.empId);
+        rows.push([r.date, emp ? emp.name : r.empId, emp ? emp.role : '', r.shift, r.startTime || '-', r.endTime || '-', `${r.breakHours || 1.0}시간`]);
+      });
+
+    } else if (activeModule === 'staff-directory') {
+      filename = `365메디스타약국_직원명부.csv`;
+      rows.push(['365메디스타약국 정식 직원 명부 (약국장 포함 9인)']);
+      rows.push(['성명', '구분/직무', '직책', '급여유형', '입사일자', '약정시급/기본급', '연락처', '이메일 계정', '잔여연차', '비고']);
+      employees.forEach(e => {
+        rows.push([e.name, e.role, e.position, e.payType, e.joinDate, e.baseMonthlySalary || e.hourlyRate, e.phone, e.email, (15 - (e.usedLeave || 0)), e.memo]);
+      });
+
+    } else if (activeModule === 'annual-leave') {
+      filename = `365메디스타약국_연차대장.csv`;
+      rows.push(['365메디스타약국 연차 유급휴가 대장 (근로기준법 제60조)']);
+      rows.push(['성명', '직무', '입사일자', '법정 총 연차일수', '사용 연차일수', '잔여 연차일수']);
+      employees.forEach(e => {
+        const calc = window.LaborCalculator.calculateStatutoryLeave(e.joinDate);
+        rows.push([e.name, e.role, e.joinDate, calc.totalGranted, e.usedLeave || 0, (calc.totalGranted - (e.usedLeave || 0))]);
+      });
+
+      rows.push([]);
+      rows.push(['[ 연차 신청 및 사용 상세 기록 ]']);
+      rows.push(['신청일시', '직원명', '직무', '시작일', '종료일', '사용일수', '구분', '사유', '승인상태']);
+      (data.leaveRequests || []).forEach(l => {
+        rows.push([l.createdAt, l.empName, l.role, l.startDate, l.endDate, l.daysCount, l.type, l.reason, l.status]);
+      });
+
+    } else if (activeModule === 'discount-purchase') {
+      filename = `365메디스타약국_직원할인구매대장.csv`;
+      rows.push(['365메디스타약국 직원 할인 구매 정산 대장']);
+      rows.push(['구매일시', '직원명', '품목명', '도매가(단가)', '수량', '결제 총금액']);
+      (data.discountPurchases || []).forEach(d => {
+        rows.push([d.dateStr, d.empName, d.itemName, d.unitPrice, d.qty, d.totalPrice]);
+      });
+
+    } else if (activeModule === 'notices') {
+      filename = `365메디스타약국_공지사항및SOP.csv`;
+      rows.push(['365메디스타약국 공지사항 & 업무 SOP 목록']);
+      rows.push(['등록일자', '카테고리', '제목', '작성자', '상단고정여부', '내용']);
+      (data.notices || []).forEach(n => {
+        rows.push([n.date, n.category, n.title, n.author, n.isPinned ? '예' : '아니오', n.content.replace(/\n/g, ' ')]);
+      });
+
+    } else if (activeModule === 'worklog') {
+      filename = `365메디스타약국_업무일지.csv`;
+      rows.push(['365메디스타약국 약국 업무일지 & 인수인계 목록']);
+      rows.push(['작성일자', '작성자', '구분', '업무 내용', '진행상태']);
+      (data.worklogs || []).forEach(w => {
+        rows.push([w.date, w.author, w.category, w.content, w.status]);
+      });
+
+    } else if (activeModule === 'emergency-contacts') {
+      filename = `365메디스타약국_운영지원연락망.csv`;
+      rows.push(['365메디스타약국 약국 운영 지원 연락망 Center']);
+      rows.push(['구분', '담당자/기관명', '직통 연락처', '비고']);
+      (data.emergencyContacts || []).forEach(c => {
+        rows.push([c.category, c.name, c.phone, c.memo]);
+      });
+
+    } else if (activeModule === 'patient-orders') {
+      filename = `365메디스타약국_환자예약미출_고객문자발송대장.csv`;
+      rows.push(['[ 1. 처방약 미출약 관리 대장 ]']);
+      rows.push(['환자명', '생년월일', '연락처', '처방병원', '미출약품내역', '주문처', '처방일자', '결제상태', '보관위치', '비고', '진행상태', '등록자']);
+      const shortages = (window.SheetsSync.getPrescriptionShortages ? window.SheetsSync.getPrescriptionShortages() : (data.prescriptionShortages || [])) || [];
+      shortages.forEach(s => {
+        rows.push([s.patientName, s.residentId || '', s.phone, s.clinicName || '', (s.drugName || '').replace(/\n/g, ' '), s.orderSupplier || '', s.rxDate || '', s.payType || '', s.storageLocation || '', s.notes || '', s.status || '', s.registeredBy || '']);
+      });
+      rows.push([]);
+      rows.push(['[ 2. 일반약·건기식 예약 주문 대장 ]']);
+      rows.push(['환자명', '연락처', '약품명', '수령방식', '결제상태', '총금액', '선결제액', '미납잔액', '비고', '진행상태', '등록자']);
+      const orders = (window.SheetsSync.getPatientOrders ? window.SheetsSync.getPatientOrders() : (data.patientOrders || [])) || [];
+      orders.forEach(o => {
+        rows.push([o.patientName, o.phone, (o.drugName || '').replace(/\n/g, ' '), o.deliveryType || '', o.payType || '', o.totalPrice || 0, o.paidAmount || 0, o.unpaidBalance || 0, o.notes || '', o.status || '', o.registeredBy || '']);
+      });
+      rows.push([]);
+      rows.push(['[ 3. 고객 안내 문자 발송 이력 ]']);
+      rows.push(['수신자', '연락처', '템플릿구분', '발송직원', '발송일시', '발송내용']);
+      const smsHistory = (window.SheetsSync.getSmsDispatchHistory ? window.SheetsSync.getSmsDispatchHistory() : (data.smsDispatchHistory || [])) || [];
+      smsHistory.forEach(h => {
+        const dStr = h.createdAt ? new Date(h.createdAt).toLocaleString('ko-KR') : '';
+        rows.push([h.recipientName, h.phone, h.templateTitle || '', h.senderName || '', dStr, (h.content || '').replace(/\n/g, ' ')]);
+      });
+
+    } else if (activeModule === 'pharmacy-settlement') {
+      filename = `365메디스타약국_스마트정산대시보드_2026년08월.csv`;
+      const ps = data.pharmacySettlement || {};
+      const dispensingFee = Number(ps.dispensingFee) || 18500000;
+      const generalRevenue = Number(ps.generalRevenue || ps.posRevenue) || 24200000;
+      const patientCopay = Number(ps.patientCopay) || 12000000;
+      const nhisClaim = Number(ps.nhisClaim) || 18000000;
+      const otherIncome = Number(ps.otherIncome) || 1800000;
+      const totalRev = dispensingFee + generalRevenue + patientCopay + nhisClaim + otherIncome;
+      const cardRev = Number(ps.cardRevenue) || Math.round(totalRev * 0.85);
+      const cashRev = Number(ps.cashRevenue) || (totalRev - cardRev);
+
+      const cashWholesale = ps.cashWholesale || { '다우약품': 12400000, '산성호': 8500000, '백제약품': 7200000, '지오영': 6800000 };
+      const cardPharma = ps.cardPharma || { '대웅제약': 2400000, '동화약품': 1800000, '일양약품': 1200000, '비타민하우스': 950000, 'GC녹십자': 1050000 };
+
+      rows.push(['365메디스타약국 스마트 정산 손익 대시보드']);
+      rows.push(['산출년월', '2026년 08월']);
+      rows.push([]);
+
+      rows.push(['[ 1. 월간 손익 요약 (P&L Summary) ]']);
+      rows.push(['수입 항목', '산출 설명', '금액(원)']);
+      rows.push(['처방전 조제료 수입', '조제기술료 및 행위료', dispensingFee]);
+      rows.push(['매장 일반매출', '일반의약품, 영양제, 의약외품', generalRevenue]);
+      rows.push(['(세분화) 카드 수입', '신용/체크카드 결제 수납액', cardRev]);
+      rows.push(['(세분화) 현금 수입', '현금 및 계좌이체 수납액', cashRev]);
+      rows.push(['환자 본인부담금', '창구 직접 결제액', patientCopay]);
+      rows.push(['국민건강보험공단 청구금', '공단 입금 요양급여비', nhisClaim]);
+      rows.push(['비급여 및 기타수입', '비급여 주사제/제수입', otherIncome]);
+      rows.push(['당월 총수입 합계', '', totalRev]);
+      rows.push([]);
+
+      rows.push(['[ 2-A. 도매상 및 제약사 현금결제 ]']);
+      rows.push(['업체명/거래처', '결제 방식', '결제 금액(원)']);
+      Object.entries(cashWholesale).forEach(([k, v]) => {
+        rows.push([k, '현금/계좌이체 결제', v]);
+      });
+      rows.push([]);
+
+      rows.push(['[ 2-B. 도매상 및 제약사 카드결제 ]']);
+      rows.push(['업체명/거래처', '결제 방식', '결제 금액(원)']);
+      Object.entries(cardPharma).forEach(([k, v]) => {
+        rows.push([k, '신용카드 결제', v]);
+      });
+      rows.push([]);
+
+      rows.push(['[ 3. 공과금 및 고정 관리비 ]']);
+      rows.push(['비용 항목', '산출 설명', '금액(원)']);
+      rows.push(['약국 월 임차료', '매장 월세', Number(ps.rentExpense) || 3500000]);
+      rows.push(['건물 관리비', '전기/수도/수선 관리비', Number(ps.maintExpense) || 500000]);
+      rows.push(['4대보험 사업주 부담금', '직원 4대보험 부담금', Number(ps.insurance4Cost) || 1850000]);
+      rows.push(['세무사 기장료', '세무사 기장/결산 수수료', Number(ps.taxAccountantFee) || 220000]);
+      rows.push(['카드/통신 수수료', 'POS/카드 가맹점 수수료', Number(ps.posCardFee) || 1120000]);
+      Object.entries(ps.customOperating || {}).forEach(([k, v]) => {
+        rows.push([`${k} (추가)`, '사용자 추가 고정비', v]);
+      });
+      rows.push([]);
+
+      rows.push(['[ 4. 금융비용 및 원리금 상환 ]']);
+      rows.push(['금융 항목', '산출 설명', '금액(원)']);
+      rows.push(['담보대출 이자', '약국 담보/운전자금 이자', Number(ps.loanInterest) || 2150000]);
+      rows.push(['대출 원리금 상환액', '원금 및 이자 상환액', Number(ps.loanPrincipal) || 1500000]);
+      Object.entries(ps.customFinancial || {}).forEach(([k, v]) => {
+        rows.push([`${k} (추가)`, '사용자 추가 금융비용', v]);
+      });
+      rows.push([]);
+
+      rows.push(['[ 5. 2026년 8월 일일 결산 회계 장부 (31일) ]']);
+      rows.push(['일자', '요일', '조제매출(원)', '일반매출(원)', '일총매출(원)', '카드수입액(원)', '현금수입액(원)', '일소액지출(원)', '비고']);
+      (ps.dailyLogs || []).forEach(l => {
+        rows.push([l.date, l.dayOfWeek, l.dispensingRevenue, l.posRevenue, l.totalRevenue, l.cardPay, l.cashPay, l.dailyExpense, l.note]);
+      });
+
+    } else if (activeModule === 'building-rental') {
+      filename = `365메디스타약국타워_건물임대업_자산대장.csv`;
+      const br = data.buildingRental || {};
+      rows.push(['365메디스타약국 타워 건물 임대업 대시보드 자산 대장']);
+      rows.push(['건물명', br.buildingName || '365메디스타약국 타워']);
+      rows.push(['보유 자산가치', br.assetValue || 5500000000]);
+      rows.push([]);
+      rows.push(['[ 호실별 임대차 계약 대장 ]']);
+      rows.push(['호실', '입주 상호명', '대표자명', '업종', '보증금(원)', '월 임대료(원)', '월 관리비(원)', '부가세 VAT(원)', '계약 시작일', '계약 만료일', '수납 상태', '비고']);
+      (br.units || []).forEach(u => {
+        rows.push([u.unit, u.tenantName, u.repName || '대표자', u.type, u.deposit, u.rent, u.maintenanceFee, u.vat || (u.rent * 0.1), u.startDate, u.endDate, u.status === 'PAID' ? '수납완료' : '당월미납', u.note]);
+      });
+
+    } else {
+      filename = `365메디스타약국_${activeModule}.csv`;
+      rows.push(['365메디스타약국 데이터 내보내기']);
+      rows.push(['모듈', activeModule]);
+      employees.forEach(e => {
+        rows.push([e.name, e.role, e.email, e.phone]);
+      });
+    }
+
+    const csvContent = '\uFEFF' + rows.map(r => r.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    alert(`📊 현재 화면 [${MODULE_TITLES[activeModule] || activeModule}] 주요 데이터가 구글 스프레드시트 연동 전용 파일(${filename})로 다운로드되었습니다!`);
+  }
+
+  function openSheetModal() {
+    let modal = document.getElementById('sheet-sync-setup-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'sheet-sync-setup-modal';
+      modal.className = 'modal-overlay';
+      modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999999; display:flex; justify-content:center; align-items:center;';
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="modal-card" style="background:#ffffff; border-radius:24px; max-width:620px; width:94%; padding:28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); position:relative; max-height:92vh; overflow-y:auto;">
+        <button type="button" class="close-btn" onclick="document.getElementById('sheet-sync-setup-modal').style.display='none'" style="position:absolute; top:20px; right:24px; font-size:26px; background:none; border:none; color:#64748b; cursor:pointer;">&times;</button>
+        
+        <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom">
+          <div style="width:50px; height:50px; border-radius:14px; background:#dcfce7; color:#15803d; display:flex; justify-content:center; align-items:center; font-size:26px; flex-shrink:0;">
+            <i class="fas fa-database"></i>
+          </div>
+          <div>
+            <span class="badge bg-success mb-1" style="font-size:11.5px; border-radius:8px;">약국장 전용 마스터 센터</span>
+            <h3 style="font-size:20px; font-weight:800; color:#0f172a; margin:0;">🔄 기기 간 실시간 동기화 & 백업 센터</h3>
+          </div>
+        </div>
+
+        <!-- 1. 초고속 클라우드 실시간 동기화 카드 -->
+        <div class="card p-3 mb-3" style="background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border:1.5px solid #93c5fd; border-radius:16px;">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <span style="font-size:13.5px; font-weight:800; color:#1d4ed8;">☁️ 집 ↔ 약국 컴퓨터 실시간 클라우드 동기화</span>
+              <div style="font-size:12.5px; color:#1e40af; margin-top:2px;">Google Firebase 실시간 DB와 0.1초 만에 최신 데이터를 동기화합니다.</div>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-primary font-bold" onclick="App.forceSyncCloudNow(this)" style="border-radius:10px; padding:9px 18px; font-size:13.5px; box-shadow:0 4px 12px rgba(37,99,235,0.25);">
+                <i class="fas fa-cloud-download-alt me-1"></i> 지금 클라우드 동기화
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 기기 간 원클릭 파일 백업 및 복원 카드 -->
+        <div class="card p-3 mb-4" style="background:#f8fafc; border:1.5px solid #cbd5e1; border-radius:16px;">
+          <span style="font-size:13.5px; font-weight:800; color:#334155;">💾 집 컴퓨터 ↔ 약국 컴퓨터 100% 완전 복원 (파일 백업)</span>
+          <p class="text-muted mb-3" style="font-size:12.5px; margin-top:2px; line-height:1.5;">네트워크 환경과 무관하게 모든 데이터(스케줄, 일지, 약품위치, 명부 등)를 파일(.json)로 저장하여 다른 기기에 1초 만에 즉시 복원할 수 있습니다.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary font-bold" onclick="App.exportBackupFile()" style="border-radius:10px; padding:9px 16px; font-size:13px; background:#fff;">
+              <i class="fas fa-download me-1"></i> 📥 전체 데이터 백업 파일 저장 (.json)
+            </button>
+            <button type="button" class="btn btn-success font-bold" onclick="App.triggerImportBackup()" style="border-radius:10px; padding:9px 16px; font-size:13px;">
+              <i class="fas fa-upload me-1"></i> 📤 백업 파일로 즉시 복원
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. 하단 액션 버튼 -->
+        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+          <button type="button" class="btn btn-outline-dark font-bold" onclick="App.downloadActiveModuleToGoogleSheets()" style="border-radius:10px; padding:8px 16px; font-size:13px;">
+            <i class="fas fa-file-excel me-1 text-success"></i> 현재 화면 엑셀(CSV) 다운로드
+          </button>
+          <button type="button" class="btn btn-secondary font-bold" onclick="document.getElementById('sheet-sync-setup-modal').style.display='none'" style="border-radius:10px; padding:8px 20px;">닫기</button>
+        </div>
+      </div>
+    `;
+
+    modal.style.display = 'flex';
+  }
+
+  function exportBackupFile() {
+    if (window.SheetsSync && window.SheetsSync.exportFullBackupJSON) {
+      window.SheetsSync.exportFullBackupJSON();
+      alert('💾 현재 모든 데이터(직원명부, 스케줄, 업무일지, 결산, 연차 등)가 백업 파일(.json)로 안전하게 다운로드되었습니다!\n\n이 파일을 카카오톡이나 메일/USB를 통해 약국 컴퓨터로 전송하신 뒤, 약국 컴퓨터에서 [📤 약국 컴퓨터에 백업 파일 복원]을 누르시면 1초 만에 100% 동일하게 복원됩니다.');
+    }
+  }
+
+  function triggerImportBackup() {
+    let input = document.getElementById('backup-file-hidden-input');
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.id = 'backup-file-hidden-input';
+      input.accept = '.json,application/json';
+      input.style.display = 'none';
+      input.onchange = function(e) {
+        handleBackupFileSelect(e);
+      };
+      document.body.appendChild(input);
+    }
+    input.value = '';
+    input.click();
+  }
+
+  function handleBackupFileSelect(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const text = evt.target.result;
+        const res = window.SheetsSync.importFullBackupJSON(text);
+        if (res && res.success) {
+          alert('🎉 백업 파일의 모든 데이터가 성공적으로 복원되었습니다!\n(직원명부, 스케줄, 업무일지, 결산, 연차 등 모든 데이터가 최신으로 갱신되었습니다)');
+          const modal = document.getElementById('sheet-sync-setup-modal');
+          if (modal) modal.style.display = 'none';
+        } else {
+          alert('❌ 백업 파일 복원 실패: ' + (res.error || '올바른 파일 형식이 아닙니다.'));
+        }
+      } catch(err) {
+        alert('❌ 파일 읽기 오류: ' + err.message);
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  async function forceSyncCloudNow(btnEl) {
+    let originalHtml = '';
+    if (btnEl) {
+      originalHtml = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 동기화 진행 중...';
+    }
+    try {
+      if (window.SheetsSync && window.SheetsSync.pullFromCloud) {
+        await window.SheetsSync.pullFromCloud();
+        alert('🎉 클라우드 최신 데이터 실시간 동기화가 성공적으로 완료되었습니다!');
+        renderActiveModule();
+        renderSidebarNavigation();
+      } else {
+        alert('⚠️ 동기화 모듈을 불러올 수 없습니다.');
+      }
+    } catch(err) {
+      alert('❌ 동기화 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
+      }
+    }
+  }
+
+  async function triggerDirectSheetSync() {
+    const sheetId = "16yVS9f9bQs9Z2S1k2McnxhHGb9QjQguPa93MxZvNtP0";
+    if (window.SheetsSync && window.SheetsSync.syncDirectWithGoogleSheet) {
+      const res = await window.SheetsSync.syncDirectWithGoogleSheet(sheetId);
+      if (res && res.success) {
+        alert("🎉 구글 스프레드시트(365메디스타약국_DB_260818) 데이터가 성공적으로 동기화 반영되었습니다!");
+        if (window.StaffDirectoryModule) {
+          window.StaffDirectoryModule.render('module-content');
+        }
+        renderActiveModule();
+        renderSidebarNavigation();
+      } else {
+        alert("⚠️ 구글 시트 접근 안내: 구글 시트 우측 상단 [공유] 버튼을 눌러 '링크가 있는 모든 사용자(뷰어/편집자)'로 설정해 주시면 즉시 100% 자동 동기화됩니다.");
+      }
+    }
+    const modal = document.getElementById('sheet-sync-setup-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function closeSheetModal() {
+    const modal = document.getElementById('sheet-sync-setup-modal');
+    if (modal) modal.style.display = 'none';
+  }
+function copyGasScriptCode() {
+    const code = `/**
+ * 365메디스타약국 & 구글 스프레드시트 100% 실시간 양방향 동기화 Google Apps Script
+ * Sheet ID: 16yVS9f9bQs9Z2S1k2McnxhHGb9QjQguPa93MxZvNtP0
+ */
+
+function doGet(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var data = {
+    employees: readSheetData(ss.getSheetByName("직원명부")),
+    dailySettlement: readSheetData(ss.getSheetByName("일일결산")),
+    schedule: readSheetData(ss.getSheetByName("월간근무스케줄")),
+    pharmacySettlement: readSheetData(ss.getSheetByName("스마트약국정산")),
+    buildingRental: readSheetData(ss.getSheetByName("건물임대대장")),
+    leaveRequests: readSheetData(ss.getSheetByName("연차신청대장"))
+  };
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    var contents = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (contents.employees) writeSheetData(ss.getSheetByName("직원명부"), contents.employees);
+    if (contents.dailySettlement) writeSheetData(ss.getSheetByName("일일결산"), contents.dailySettlement);
+    if (contents.pharmacySettlement) writeSheetData(ss.getSheetByName("스마트약국정산"), contents.pharmacySettlement);
+    if (contents.buildingRental) writeSheetData(ss.getSheetByName("건물임대대장"), contents.buildingRental);
+    return ContentService.createTextOutput(JSON.stringify({ status: "SUCCESS" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "ERROR", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function readSheetData(sheet) {
+  if (!sheet) return [];
+  var values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+  var headers = values[0];
+  var result = [];
+  for (var i = 1; i < values.length; i++) {
+    var row = {};
+    for (let j = 0; j < headers.length; j++) {
+      row[headers[j]] = values[i][j];
+    }
+    result.push(row);
+  }
+  return result;
+}
+
+function writeSheetData(sheet, dataList) {
+  if (!sheet || !dataList || dataList.length === 0) return;
+  var headers = Object.keys(dataList[0]);
+  sheet.clearContents();
+  sheet.appendRow(headers);
+  dataList.forEach(function(item) {
+    var row = headers.map(function(h) { return item[h] || ""; });
+    sheet.appendRow(row);
+  });
+}`;
+
+    navigator.clipboard.writeText(code).then(() => {
+      alert("📋 Google Apps Script (GAS) 100% 양방향 자동 통신 코드가 클립보드에 복사되었습니다!\n구글 시트 메뉴 [확장 프로그램] ➔ [Apps Script]에 붙여넣어 주세요.");
+    });
+  }
+
+  function openEmpModal() {
+    if (window.StaffDirectoryModule && window.StaffDirectoryModule.openNewEmpModal) {
+      window.StaffDirectoryModule.openNewEmpModal();
+      return;
+    }
+    let modal = document.getElementById('new-emp-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'new-emp-modal';
+      modal.className = 'modal-overlay';
+      modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999999; display:flex; justify-content:center; align-items:center;';
+      document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+    modal.style.zIndex = '9999999';
+  }
+
+  function saveNewEmployee(e) {
+    e.preventDefault();
+    const curr = window.SheetsSync.getCurrentUser();
+    if (curr && curr.role !== '약국장' && curr.name !== '문성도') {
+      alert('🔒 [권한 통제] 약국장님만 신규 직원을 등록할 수 있습니다.');
+      return;
+    }
+
+    const name = document.getElementById('new-emp-name').value.trim();
+    const role = document.getElementById('new-emp-role').value;
+    const position = document.getElementById('new-emp-position').value.trim();
+    const payType = document.getElementById('new-emp-paytype').value;
+    const hourlyRate = parseInt(document.getElementById('new-emp-rate').value) || 35000;
+    const baseMonthlySalary = parseInt(document.getElementById('new-emp-salary').value) || 2717000;
+    const email = document.getElementById('new-emp-email').value.trim();
+    const phone = document.getElementById('new-emp-phone').value.trim();
+    const joinDate = document.getElementById('new-emp-joindate').value;
+    const memo = document.getElementById('new-emp-memo').value.trim();
+
+    const emps = window.SheetsSync.getEmployees() || [];
+    
+    if (emps.some(emp => emp.email === email || emp.username === email)) {
+      alert('⚠️ 이미 등록된 이메일 계정이 존재합니다. 다른 이메일을 사용하세요.');
+      return;
+    }
+
+    const ALL_COMMON_TABS = [
+      'notices-module', 'worklog-module', 'supplies-module', 'patient-orders-module',
+      'medicine-location-module', 'rx-medicine-location-module', 'pharmacy-exchange-module',
+      'expiry-returns-module', 'schedule-module', 'annual-leave-module', 'discount-purchase-module',
+      'rules-module', 'emergency-contacts-module'
+    ];
+
+    const newEmp = {
+      id: 'emp_' + (emps.length + 1) + '_' + Date.now(),
+      username: email,
+      email: email,
+      passcode: '1234',
+      name: name,
+      role: role,
+      position: position,
+      payType: payType,
+      joinDate: joinDate,
+      hourlyRate: hourlyRate,
+      baseMonthlySalary: baseMonthlySalary,
+      phone: phone,
+      usedLeave: 0,
+      pendingLeave: 0,
+      memo: memo,
+      allowedTabs: [...ALL_COMMON_TABS]
+    };
+
+    emps.push(newEmp);
+    window.SheetsSync.saveEmployees(emps);
+
+    if (role.includes('약사')) {
+      const rates = window.SheetsSync.getPharmacistRates ? window.SheetsSync.getPharmacistRates() : {};
+      rates[newEmp.id] = { weekdayRate: hourlyRate, holidayRate: Math.round(hourlyRate * 1.15), breakHours: 1.0 };
+      if (window.SheetsSync.savePharmacistRates) window.SheetsSync.savePharmacistRates(rates);
+    }
+
+    document.getElementById('new-emp-modal').style.display = 'none';
+    alert(`🎉 신규 직원 [${name} ${role}] 님의 계정 및 명부 등록이 완료되었습니다!\n(초기 비밀번호: 1234)`);
+    
+    if (window.StaffDirectoryModule) {
+      window.StaffDirectoryModule.render('module-content');
+    }
+  }
+
+  function openLeaveModal() {
+    if (window.AnnualLeaveModule && window.AnnualLeaveModule.toggleInlineLeaveForm) {
+      window.AnnualLeaveModule.toggleInlineLeaveForm(true);
+    }
+  }
+
+  function submitLeaveRequest(e) {
+    if (window.AnnualLeaveModule && window.AnnualLeaveModule.submitLeaveApplication) {
+      window.AnnualLeaveModule.submitLeaveApplication(e);
+    }
+  }
+
+  // 🚀 [Option A] 자동 버전 감지 및 무중단 스마트 자동 업데이트 엔진
+  let isCheckingUpdate = false;
+  async function checkAppUpdate() {
+    if (isCheckingUpdate || typeof window === 'undefined' || typeof window.fetch !== 'function') return;
+    isCheckingUpdate = true;
+    try {
+      const res = await fetch('version.json?_t=' + Date.now(), {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.version) {
+          const verBadge = document.getElementById('app-version-badge');
+          if (verBadge) {
+            verBadge.textContent = data.displayVersion || data.version;
+            if (data.name) verBadge.title = data.name;
+          }
+          const storedVersion = localStorage.getItem('mds_app_version');
+          if (!storedVersion) {
+            localStorage.setItem('mds_app_version', data.version);
+            return;
+          }
+          if (storedVersion !== data.version) {
+            localStorage.setItem('mds_app_version', data.version);
+            console.log("🚀 새 버전 배포 감지 - 즉시 최신화 새로고침:", data.version);
+            if (window.location) {
+              window.location.reload(true);
+            }
+          }
+        }
+      }
+    } catch(e) {
+      // 오프라인이나 네트워크 불안정 시 조용히 무시
+    } finally {
+      isCheckingUpdate = false;
+    }
+  }
+
+  function forceHardReload() {
+    try {
+      const icon = document.getElementById('refresh-spin-icon');
+      if (icon) icon.classList.add('fa-spin');
+      if (window.SheetsSync && typeof window.SheetsSync.pullFromCloud === 'function') {
+        window.SheetsSync.pullFromCloud();
+      }
+      setTimeout(() => {
+        const cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname + '?v=' + Date.now();
+        window.location.replace(cleanUrl);
+      }, 250);
+    } catch(e) {
+      window.location.reload(true);
+    }
+  }
+
+  function startAutoUpdateChecker() {
+    // 1. 앱 기동 1초 후 1차 체크 및 클라우드 동기화
+    setTimeout(() => {
+      checkAppUpdate();
+      if (window.SheetsSync && typeof window.SheetsSync.pullFromCloud === 'function') {
+        window.SheetsSync.pullFromCloud();
+      }
+    }, 1000);
+
+    // 2. 다른 앱이나 탭에서 약국 앱으로 돌아올 때(Focus / VisibilityChange) 1회만 초고속 최신화 (가만히 있을 때는 0 Byte 대기!)
+    window.addEventListener('focus', () => {
+      checkAppUpdate();
+      if (window.SheetsSync && typeof window.SheetsSync.requestPushPermission === 'function') {
+        window.SheetsSync.requestPushPermission(true);
+      }
+      if (window.SheetsSync && typeof window.SheetsSync.pullFromCloud === 'function') {
+        window.SheetsSync.pullFromCloud();
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        checkAppUpdate();
+        if (window.SheetsSync && typeof window.SheetsSync.requestPushPermission === 'function') {
+          window.SheetsSync.requestPushPermission(true);
+        }
+        if (window.SheetsSync && typeof window.SheetsSync.pullFromCloud === 'function') {
+          window.SheetsSync.pullFromCloud();
+        }
+      }
+    });
+  }
+
+  // 🖼️ 전역 공통 모달: 원본 사진 대형 라이트박스 (다중 사진 슬라이드 & Chrome Data URI 차단 100% 우회)
+  let currentLightboxImages = [];
+  let currentLightboxIndex = 0;
+  let currentLightboxTitle = '';
+
+  function openImageLightbox(urlsOrUrl, title, initialIndexOrUrls = 0) {
+    if (!urlsOrUrl) return;
+
+    let urls = [];
+    let initialIndex = 0;
+
+    if (Array.isArray(initialIndexOrUrls)) {
+      // 3번째 인자로 전체 사진 배열이 전달된 경우 자동 융합
+      urls = initialIndexOrUrls.filter(Boolean);
+      initialIndex = 0;
+    } else if (Array.isArray(urlsOrUrl)) {
+      urls = urlsOrUrl.filter(Boolean);
+      initialIndex = typeof initialIndexOrUrls === 'number' ? initialIndexOrUrls : 0;
+    } else {
+      urls = [urlsOrUrl].filter(Boolean);
+      initialIndex = typeof initialIndexOrUrls === 'number' ? initialIndexOrUrls : 0;
+    }
+
+    if (urls.length === 0) return;
+
+    currentLightboxImages = urls;
+    const safeIdx = (typeof initialIndex === 'number' && !isNaN(initialIndex)) ? Math.floor(initialIndex) : 0;
+    currentLightboxIndex = Math.max(0, Math.min(safeIdx, urls.length - 1));
+    currentLightboxTitle = title || '사진 원본 크게보기';
+
+    renderLightboxContent();
+
+    const modal = document.getElementById('global-image-lightbox-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function renderLightboxContent() {
+    const img = document.getElementById('global-lightbox-img');
+    const titleEl = document.getElementById('global-lightbox-title');
+    const downloadBtn = document.getElementById('global-lightbox-download-btn');
+    const url = currentLightboxImages[currentLightboxIndex] || '';
+
+    if (img) {
+      img.onerror = function() {
+        img.onerror = null;
+        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220"><rect width="360" height="220" rx="16" fill="%231e293b"/><text x="50%" y="42%" dominant-baseline="middle" text-anchor="middle" fill="%23f8fafc" font-size="15" font-weight="bold">📷 구형 이미지 로딩 실패 (구글 403 차단)</text><text x="50%" y="62%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-size="12">새로 사진을 등록해주시면 100% 선명하게 보관됩니다</text></svg>';
+      };
+      img.src = url;
+    }
+
+    const counterHtml = currentLightboxImages.length > 1 
+      ? ` <span style="font-size:12px; font-weight:700; background:#334155; color:#38bdf8; padding:2px 8px; border-radius:9999px; margin-left:8px;">${currentLightboxIndex + 1} / ${currentLightboxImages.length}</span>` 
+      : '';
+
+    if (titleEl) {
+      titleEl.innerHTML = `<i class="fas fa-camera text-blue-400 me-1"></i> <span>${currentLightboxTitle}</span>${counterHtml}`;
+    }
+
+    let navContainer = document.getElementById('global-lightbox-nav-container');
+    if (!navContainer) {
+      const imgContainer = img ? img.parentElement : null;
+      if (imgContainer) {
+        navContainer = document.createElement('div');
+        navContainer.id = 'global-lightbox-nav-container';
+        navContainer.style.cssText = 'position:absolute; width:100%; top:50%; transform:translateY(-50%); display:flex; justify-content:space-between; padding:0 8px; pointer-events:none; left:0;';
+        navContainer.innerHTML = `
+          <button type="button" id="global-lightbox-prev-btn" onclick="App.prevLightboxImage()" style="pointer-events:auto; background:rgba(15,23,42,0.8); border:1px solid #475569; width:38px; height:38px; border-radius:50%; color:#fff; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,0.5);"><i class="fas fa-chevron-left"></i></button>
+          <button type="button" id="global-lightbox-next-btn" onclick="App.nextLightboxImage()" style="pointer-events:auto; background:rgba(15,23,42,0.8); border:1px solid #475569; width:38px; height:38px; border-radius:50%; color:#fff; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,0.5);"><i class="fas fa-chevron-right"></i></button>
+        `;
+        if (imgContainer.style.position !== 'relative') imgContainer.style.position = 'relative';
+        imgContainer.appendChild(navContainer);
+      }
+    }
+    if (navContainer) {
+      navContainer.style.display = currentLightboxImages.length > 1 ? 'flex' : 'none';
+    }
+
+    if (downloadBtn) {
+      downloadBtn.onclick = function() {
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${(currentLightboxTitle || '약국사진').replace(/[^\w가-힣]/g, '_')}_${currentLightboxIndex + 1}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } catch (e) {
+          console.warn('Download error:', e);
+        }
+      };
+    }
+  }
+
+  function prevLightboxImage() {
+    if (currentLightboxImages.length <= 1) return;
+    currentLightboxIndex = (currentLightboxIndex - 1 + currentLightboxImages.length) % currentLightboxImages.length;
+    renderLightboxContent();
+  }
+
+  function nextLightboxImage() {
+    if (currentLightboxImages.length <= 1) return;
+    currentLightboxIndex = (currentLightboxIndex + 1) % currentLightboxImages.length;
+    renderLightboxContent();
+  }
+
+  function closeImageLightbox() {
+    const modal = document.getElementById('global-image-lightbox-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // ⚡ 획기적 4대 멀티-파이프라인: 초고속 클라이언트 압축 & 3단계 서킷 브레이커 엔진
+  function compressPhotoFile(file, maxWidth = 640, quality = 0.55) {
+    return new Promise((resolve) => {
+      if (!file) return resolve('');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              let width = img.width || maxWidth;
+              let height = img.height || 480;
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+              }
+              const compressed = canvas.toDataURL('image/jpeg', quality);
+              resolve(compressed);
+            } catch (err) {
+              resolve(e.target.result || '');
+            }
+          };
+          img.onerror = () => resolve(e.target.result || '');
+          img.src = e.target.result;
+        } catch (err) {
+          resolve('');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ⚡ 3단계 멀티-파이프라인 사진 업로드 (Cloudinary 1순위 → ImgBB 2순위 → Base64 최후)
+  async function processAndUploadPhoto(fileOrBase64) {
+    if (!fileOrBase64) return '';
+    let base64 = fileOrBase64;
+    if (typeof fileOrBase64 !== 'string') {
+      base64 = await compressPhotoFile(fileOrBase64);
+    }
+    if (!base64 || typeof base64 !== 'string' || !base64.startsWith('data:image')) {
+      return base64 || '';
+    }
+
+    // 🌥️ 1단계: Cloudinary 업로드 (25GB 무료 영구 저장 - 신용카드 불필요)
+    try {
+      const CLOUD_NAME = 'nl5hat8p';
+      const UPLOAD_PRESET = 'hxyfannv';
+      const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, '');
+      const formData = new FormData();
+      formData.append('file', base64);
+      formData.append('upload_preset', UPLOAD_PRESET);
+
+      const uploadResp = await Promise.race([
+        fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+          method: 'POST',
+          body: formData
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cloudinary timeout')), 10000))
+      ]);
+      const uploadData = await uploadResp.json();
+      if (uploadData && uploadData.secure_url) {
+        return uploadData.secure_url; // ✅ Cloudinary URL 반환 - 25GB 무료 영구 안전
+      }
+    } catch (e) {
+      console.warn('Cloudinary upload failed, trying ImgBB:', e.message);
+    }
+
+    // 🌐 2단계: ImgBB 폴백
+    try {
+      const hostedUrl = await uploadImageToImgBB(base64);
+      if (hostedUrl && hostedUrl.startsWith('http')) {
+        return hostedUrl;
+      }
+    } catch (e) {
+      console.warn('ImgBB also failed, using base64:', e.message);
+    }
+
+    // 🛡️ 3단계: 초경량 Base64 최후 보루
+    return base64;
+  }
+
+  // 🌐 ImgBB 무료 이미지 호스팅 API 연동 (영구 무료 무제한 이미지 서버)
+  async function uploadImageToImgBB(base64Data) {
+    if (!base64Data || !base64Data.startsWith('data:image')) return base64Data || '';
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const apiKey = 'c03264b38d380e2264bd9f0cb988a8f4'; // Public free ImgBB API key
+    try {
+      const formData = new FormData();
+      formData.append('key', apiKey);
+      formData.append('image', cleanBase64);
+
+      const res = await fetch('https://api.imgbb.com/1/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data && data.success && data.data && data.data.url) {
+        return data.data.url; // Returns direct i.ibb.co direct image link
+      }
+    } catch(err) {
+      console.warn('ImgBB upload error, falling back to base64:', err);
+    }
+    return base64Data;
+  }
+
+  function openGuide(jumpToCurrentTab) {
+    const url = jumpToCurrentTab && activeModule ? `guide.html?tab=${encodeURIComponent(activeModule)}` : 'guide.html';
+    window.location.href = url;
+  }
+
+  return {
+    openGuide,
+    openImageLightbox,
+    closeImageLightbox,
+    prevLightboxImage,
+    nextLightboxImage,
+    uploadImageToImgBB,
+    processAndUploadPhoto,
+    compressPhotoFile,
+    init,
+    forceHardReload,
+    renderActiveModule,
+    getActiveModule: () => activeModule,
+    renderSidebarNavigation,
+    updateSidebarBadgesOnly,
+    renderUserHeader,
+    markNoticesRead,
+    markWorklogRead,
+    markSuppliesRead,
+    markPatientOrdersRead,
+    markMedicineLocationRead,
+    markExpiryReturnsRead,
+    markApprovalRead,
+    markPillCounterRead,
+    markPillIdentifierRead,
+    quickSelectLogin,
+    showLoginModal,
+    closeLoginModal,
+    handleLoginSubmit,
+    userLogout,
+    openChangePwModal,
+    closeChangePwModal,
+    openSoundSettingsModal,
+    closeSoundSettingsModal,
+    previewSoundPreset,
+    selectSoundPreset,
+    checkPwRealtime,
+    handleChangePwSubmit,
+    switchModule,
+    navigate: function(mod) { switchModule(mod, true); },
+    toggleDrawer,
+    openDrawer,
+    closeDrawer,
+    toggleTheme,
+    downloadActiveModuleToGoogleSheets,
+    openSheetModal,
+    closeSheetModal,
+    triggerDirectSheetSync,
+    forceSyncCloudNow,
+    exportBackupFile,
+    triggerImportBackup,
+    copyGasScriptCode,
+    openEmpModal,
+    saveNewEmployee,
+    openLeaveModal,
+    submitLeaveRequest,
+    checkPendingRejectionNotice,
+    quickSelectGatewayLogin,
+    handleGatewayLoginSubmit
+  };
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.App.init();
+});

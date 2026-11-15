@@ -1,0 +1,25 @@
+{
+  "version": "v7.001",
+  "displayVersion": "v7.001",
+  "name": "🌟 365메디스타약국 전용 HR/OPS 플랫폼 독립 구축 (9,610종 일반약 엑셀 사전탑재 · 번호식 매대구역 · 일반약/전문약 위치 분리 · 10인 초기계정 및 권명주↔간영자 급여연동 · 최신 취업규칙 반영)",
+  "buildTime": 1794708000000,
+  "updatedAt": "2026-11-15 11:10",
+  "history": [
+    {
+      "version": "v7.001",
+      "updatedAt": "2026-11-15 11:10",
+      "files": [
+        "index.html",
+        "sheets-sync.js",
+        "otc-preset-db.js",
+        "medicine-location-module.js",
+        "rx-medicine-location-module.js",
+        "rules-data.js",
+        "rules-module.js",
+        "app.js",
+        "version.json"
+      ],
+      "summary": "365메디스타약국 전용 독립 DB(medistar_master_db / mds_* 스토리지) 분리, 일반약 초기 품목 엑셀 9,610종 사전 탑재 및 번호식 매대 구역(1번~12번 구역) 세팅, 일반약·전문약 별도 탭 분리 유지, 10인 초기 계정(문성도·권명주·간영자·양윤지·김동완·유호종·김배영·이정은·이성은·최종현) 및 권명주-간영자 급여 산식 연동 보존, 건물임대업 대시보드 약국장 전용 유지, 최신 개정 취업규칙(제1조~제20조+부칙) 전문 반영"
+    }
+  ]
+}
