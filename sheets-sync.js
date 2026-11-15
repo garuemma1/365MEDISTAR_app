@@ -1816,7 +1816,7 @@ window.SheetsSync = (function () {
         const totalDeduction = parseInt(paystubData.totalDeduction || 0, 10);
         const fileUrl = String(paystubData.fileUrl || paystubData.pdfUrl || paystubData.fileData || '').trim();
         const note = String(paystubData.note || (month + '월 세무사 확정 급여명세서입니다. 노고에 감사드립니다!'));
-        const appUrl = "https://garuemma1.github.io/shinsegae_app/";
+        const appUrl = "https://garuemma1.github.io/365MEDISTAR_app/";
 
         const hasPreTax = preTax > 0;
         const hasDeduction = totalDeduction > 0;
